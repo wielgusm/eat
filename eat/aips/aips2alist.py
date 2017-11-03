@@ -65,8 +65,17 @@ def jd2expt2017(jd):
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-def uvfits2csvs(folder_path):
+def uvfits2csvs(folder_path,folder_destin=''):
     listFiles = os.listdir(folder_path)
+    
+    if folder_destin=='':
+        folder_destin = folder_path
+    if not os.path.exists(folder_destin):
+        os.makedirs(folder_destin)
+    if not os.path.exists(folder_destin+'HI/'):
+        os.makedirs(folder_destin+'HI/')
+    if not os.path.exists(folder_destin+'LO/'):
+        os.makedirs(folder_destin+'LO/')
     for fileN in listFiles:
         try:
             pathFile = folder_path+fileN
@@ -84,10 +93,16 @@ def uvfits2csvs(folder_path):
             fileN_LL_csv = fileN[:-6]+'LL.csv'
             fileN_LR_csv = fileN[:-6]+'LR.csv'
             fileN_RL_csv = fileN[:-6]+'RL.csv'
-            vistableRR.to_csv(folder_path+fileN_RR_csv)
-            vistableLL.to_csv(folder_path+fileN_LL_csv)
-            vistableLR.to_csv(folder_path+fileN_LR_csv)
-            vistableRL.to_csv(folder_path+fileN_RL_csv)
+            if fileN.split('.')[0][-2:] in {'1l','lo','LO'}:
+                vistableRR.to_csv(folder_destin+'LO/'+fileN_RR_csv)
+                vistableLL.to_csv(folder_destin+'LO/'+fileN_LL_csv)
+                vistableLR.to_csv(folder_destin+'LO/'+fileN_LR_csv)
+                vistableRL.to_csv(folder_destin+'LO/'+fileN_RL_csv)
+            else:
+                vistableRR.to_csv(folder_destin+'HI/'+fileN_RR_csv)
+                vistableLL.to_csv(folder_destin+'HI/'+fileN_LL_csv)
+                vistableLR.to_csv(folder_destin+'HI/'+fileN_LR_csv)
+                vistableRL.to_csv(folder_destin+'HI/'+fileN_RL_csv)
         except IOError:
             continue
 
