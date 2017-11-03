@@ -1,18 +1,16 @@
+'''
+Codes to import uvfits files to pandas
+similar to HOPS alists importet by eat
+
+Maciek Wielgus, maciek.wielgus@gmail.com
+'''
+
 import pandas as pd
 import time, datetime, os, vex, uvdata, glob
 import numpy as np
 import numpy.random as npr
 import sys
 from astropy.time import Time, TimeDelta
-#sys.path.append('/home/maciek/Works/EHT/eat')
-#from eat.io import hops, util
-#from eat.hops import util as hu
-#path_sc_dscr =  'scans_description2'
-#sc_desc = pd.read_table(path_sc_dscr,delim_whitespace=True)
-#begtime = sc_desc.Timerange
-#endtime = sc_desc.START
-#begtime2 = [datetime.datetime(2017,1,1,int(begtime[x][2:4]),int(begtime[x][5:7]),int(begtime[x][8:10]))+datetime.timedelta(days=92+int(begtime[x][0]),hours=23,minutes=59) for x in range(len(begtime))]
-#endtime2 = [datetime.datetime(2017,1,1,int(endtime[x][2:4]),int(endtime[x][5:7]),int(endtime[x][8:10]))+datetime.timedelta(days=93+int(endtime[x][0]),minutes=1) for x in range(len(endtime))]
 
 #2017 release E1
 #dictBase = { 'A': {1:'A',2:'X',3:'Z', 4:'J',5:'L',6:'P',7:'S',8:'R'},
@@ -66,6 +64,11 @@ def jd2expt2017(jd):
 
 
 def uvfits2csvs(folder_path,folder_destin=''):
+    '''
+    takes folder folder_path of uvfits files and rewrites them as csv files
+    in folder_destination
+    uses Kazu's sparse imaging library codes
+    '''
     listFiles = os.listdir(folder_path)
     
     if folder_destin=='':
@@ -107,6 +110,10 @@ def uvfits2csvs(folder_path,folder_destin=''):
             continue
 
 def make_scan_list(fpath):
+    '''
+    generates data frame with information about scans based on vex files
+    uses vex parser written by Hotaka
+    '''
     list_files = os.listdir(fpath)
     scans = pd.DataFrame({'source' : []})
 
@@ -165,16 +172,16 @@ def make_scan_list(fpath):
     return scans
 
 
-def add_datetime(APIS): #it's AIPS
+def add_datetime(AIPS):
     ddV= []
-    for cou in range(APIS.shape[0]):
-        h = APIS['hour'][cou]
-        m = APIS['min'][cou]
-        s = APIS['sec'][cou]
-        doy = APIS['doy'][cou]
+    for cou in range(AIPS.shape[0]):
+        h = AIPS['hour'][cou]
+        m = AIPS['min'][cou]
+        s = AIPS['sec'][cou]
+        doy = AIPS['doy'][cou]
         ddV.append(datetime.datetime(2017, 1,1,h,m,s) + datetime.timedelta(days=doy-1))
-    APIS['datetime'] = ddV
-    return APIS
+    AIPS['datetime'] = ddV
+    return AIPS
 
 def add_baseline(AIPS):
     foo=[]
@@ -236,7 +243,12 @@ def match_scans(scans,AIPS):
     AIPS = AIPS[map(lambda x: x >= 0, AIPS['scan_no_tot'])]
     return AIPS
 
-def folder_into_falist(folder_path, Vex_path = 'VexFiles/'):
+def folder_into_falist(folder_path, Vex_path = 'VexFiles/', saveDF = ''):
+    '''
+    takes all csv files from folder_path
+    and generates data frame with frequency-averaged data
+    optionally saves to file
+    '''
     AIPS_OUT = pd.DataFrame({})
     list_files = os.listdir(folder_path)
     list_files = [x for x in list_files if x[0]!='.']
@@ -257,6 +269,8 @@ def folder_into_falist(folder_path, Vex_path = 'VexFiles/'):
         except:
             continue
         cou += 1
+        if saveDF != '':
+            AIPS_OUT.to_pickle(saveDF)
     return AIPS_OUT
 
 def coh_average(AIPS, tcoh = 5.):
