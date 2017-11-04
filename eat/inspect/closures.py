@@ -1,8 +1,152 @@
+import sys, os, datetime
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 hrs = [0,24.,48.]
 
+
+
+
+def list_all_triangles(alist):
+    all_baselines = set(alist.baseline)
+    all_stations = set(''.join( list(all_baselines)))
+    foo = list(itertools.combinations(all_stations, 3))
+    foo = [list(x) for x in foo if ('R' not in set(x))|('S' not in set(x))]
+    foo = [''.join(sorted(x)) for x in foo] 
+    return foo
+
+def list_all_quadrangles(alist):
+    all_baselines = set(''.join( list(set(alist.baseline))))
+    foo = list(itertools.combinations(all_baselines, 4))
+    foo = [set(x) for x in foo if ('R' not in set(x))|('S' not in set(x))]
+    return foo
+
+def triangles2baselines(tri,alist):
+    all_baselines = set(alist.baseline)
+    foo_base = []
+    signat = []
+    for cou in range(len(tri)):
+        b0 = tri[cou][0:2]
+        b1 = tri[cou][1:3]
+        b2 = tri[cou][2]+tri[cou][0]
+        #print([b0,b1,b2])
+        if b0 in all_baselines:
+            base0 = b0
+            sign0 = 1
+        elif b0[1]+b0[0] in all_baselines:
+            base0 = b0[1]+b0[0]
+            sign0 = -1
+        else:
+            base0 = -1
+            sign0 = 0
+            
+        if b1 in all_baselines:
+            base1 = b1
+            sign1 = 1
+        elif b1[1]+b1[0] in all_baselines:
+            base1 = b1[1]+b1[0]
+            sign1 = -1
+        else:
+            base1 = -1
+            sign1 = 0
+            
+        if b2 in all_baselines:
+            base2 = b2
+            sign2 = 1
+        elif b2[1]+b2[0] in all_baselines:
+            base2 = b2[1]+b2[0]
+            sign2 = -1
+        else:
+            base2 = -1
+            sign2 = 0
+        baselines = [base0,base1,base2]
+        
+        baselinesSTR = map(lambda x: type(x)==str,baselines)
+        if all(baselinesSTR):
+            foo_base.append(baselines)
+            signat.append([sign0,sign1,sign2])
+    return foo_base, signat
+
+def baselines2triangles(basel):
+    tri = [''.join(sorted(list(set(''.join(x))))) for x in basel]
+    return tri
+
+def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
+    alist = alist[alist['polarization']==polar]
+    triL = list_all_triangles(alist)
+    tri_baseL, sgnL = triangles2baselines(triL,alist)
+    #this is done twice to remove some non-present triangles
+    triL = baselines2triangles(tri_baseL)
+    tri_baseL, sgnL = triangles2baselines(triL,alist)
+    bsp_out = pd.DataFrame({})
+    for cou in range(len(triL)):
+        Tri = tri_baseL[cou]
+        signat = sgnL[cou]
+        condB1 = (alist['baseline']==Tri[0])
+        condB2 = (alist['baseline']==Tri[1])
+        condB3 = (alist['baseline']==Tri[2])
+        condB = condB1|condB2|condB3
+        alist_Tri = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline',phaseType,'amp','snr','gmst']]
+        
+        #print(np.shape(alist_Tri))
+        #throw away times without full triangle
+        tlist = alist_Tri.groupby('datetime').filter(lambda x: len(x) > 2)
+        tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
+        for cou2 in range(3):
+            tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phaseType] *= signat[cou2]*np.pi/180.
+        tlist.loc[:,'sigma'] = 1./tlist.loc[:,'snr']**2 #put 1/snr**2 in the sigma column to aggregate
+        bsp = tlist.groupby(('expt_no','source','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
+        #sigma above is the CLOSURE PHASE ERROR
+        
+        bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
+        bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
+        bsp.loc[:,'sigma'] = bsp.loc[:,'amp']*bsp.loc[:,'sigma'] #sigma of bispectrum
+        bsp.loc[:,'triangle'] = [triL[cou]]*np.shape(bsp)[0]
+        bsp.loc[:,'polarization'] = [polar]*np.shape(bsp)[0]
+        #bsp.loc[:,'signature'] = [signat]*np.shape(bsp)[0]
+        bsp.loc[:,'cphase'] = np.angle(bsp.loc[:,'bisp'])*180./np.pi
+        bsp.loc[:,'amp'] = np.abs(bsp.loc[:,'bisp'])
+        bsp.loc[:,'snr'] = bsp.loc[:,'amp']/bsp.loc[:,'sigma']
+        bsp.loc[:,'sigmaCP'] = 1./bsp.loc[:,'snr']*180./np.pi #deg
+        bsp_out = pd.concat([bsp_out, bsp])
+    bsp_out = bsp_out.reset_index()
+    bsp_out = bsp_out[['datetime','source','triangle','polarization','cphase','sigmaCP','amp','sigma','snr','scan_id','expt_no']] 
+    
+    return bsp_out
+
+def only_trivial_triangles(bsp,whichB = 'all'):
+    if whichB =='AX':
+        condTri = map(lambda x: (('A' in x)&('X' in x)), bsp['triangle'])
+    elif whichB =='JS':
+        condTri = map(lambda x: (('J' in x)&('S' in x)), bsp['triangle'])
+    elif whichB =='JR':
+        condTri = map(lambda x: (('J' in x)&('R' in x)), bsp['triangle'])
+    else:
+        condTri = map(lambda x: (('A' in x)&('X' in x))|(('J' in x)&('S' in x))|(('J' in x)&('R' in x)), bsp['triangle'])
+    bsp = bsp[condTri]
+    return bsp
+
+def only_non_trivial_triangles(bsp):
+    condTri = map(lambda x: (('A' not in x)|('X' not in x))&(('J' not in x)|('S' not in x))&(('J' not in x)|('R' not in x)), bsp['triangle'])
+    bsp = bsp[condTri]
+    return bsp
+
+def coh_average_bsp(AIPS, tcoh = 5.):
+    AIPS.loc[:,'vis'] = AIPS.loc[:,'vis'] = AIPS.loc[:,'amp']*np.exp(1j*AIPS.loc[:,'cphase']*np.pi/180)
+    
+    if tcoh == 'scan':
+        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no']]
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+    else:
+        AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
+        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+    AIPS = AIPS.reset_index()
+    AIPS['amp'] = np.abs(AIPS['vis'])
+    AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
+    AIPS = AIPS[['datetime','triangle','source','polarization','amp', 'cphase', 'sigma','expt_no','scan_id']]
+    return AIPS
 
 def DataBaseline(alist,basename,polar):
     condB = (alist['baseline']==basename)
