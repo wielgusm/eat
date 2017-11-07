@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 
 hrs = [0,24.,48.]
 
-
-
-
 def list_all_triangles(alist):
     all_baselines = set(alist.baseline)
     all_stations = set(''.join( list(all_baselines)))
@@ -136,17 +133,59 @@ def coh_average_bsp(AIPS, tcoh = 5.):
     AIPS.loc[:,'vis'] = AIPS.loc[:,'vis'] = AIPS.loc[:,'amp']*np.exp(1j*AIPS.loc[:,'cphase']*np.pi/180)
     
     if tcoh == 'scan':
-        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigmaCP','snr','scan_id','expt_no']]
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2))})
     else:
         AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
         AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)) })
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
-    AIPS = AIPS[['datetime','triangle','source','polarization','amp', 'cphase', 'sigma','expt_no','scan_id']]
+    AIPS = AIPS[['datetime','triangle','source','polarization','amp', 'cphase', 'sigmaCP','snr','expt_no','scan_id']]
     return AIPS
+
+def phase_diff(v1,v2):
+    v2 = np.asarray(np.mod(v2,360) )
+    v1 = np.asarray(np.mod(v1,360) )
+    v2b = v2 + 360
+    v2c = v2 - 360
+    e1 = np.abs(v1 - v2)
+    e2 = np.abs(v1 - v2b)
+    v2[e2 < e1] = v2b[e2 < e1]
+    e1 = np.abs(v1 - v2)
+    e3 = np.abs(v1 - v2c)
+    v2[e3 < e1] = v2c[e3 < e1]
+    return v2
+
+def coh_average_vis(AIPS, tcoh = 5.):
+    AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
+    AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS['phase']*np.pi/180)
+    AIPS = AIPS[['datetime','baseline','source','polarization','vis','std','sigma','track','expt_no','scan_no_tot','round_time']]
+    AIPS = AIPS.groupby(('baseline','source','polarization','track','expt_no','scan_no_tot','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x), 'std': lambda x: np.sqrt(np.sum(x**2))/len(x)})
+    AIPS = AIPS.reset_index()
+    AIPS['amp'] = np.abs(AIPS['vis'])
+    AIPS['phase'] = np.angle(AIPS['vis'])*180/np.pi
+    AIPS = AIPS[['datetime','baseline','source','polarization','amp', 'phase','std', 'sigma','track','expt_no','scan_no_tot']]
+    return AIPS
+
+def match_2_dataframes(frame1, frame2, what_is_same=None):
+#what_is_same, e.g., triangle, then for given datetime matches only same triangles    
+    if what_is_same==None:
+        S1 = set(frame1.datetime)
+        S2 = set(frame2.datetime)
+        Sprod = S1&S2
+        cond1 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
+        cond2 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
+    else: 
+        S1 = set(zip(frame1.datetime,frame1[what_is_same]))
+        S2 = set(zip(frame2.datetime,frame2[what_is_same]))
+        Sprod = S1&S2
+        cond1 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
+        cond2 = map(lambda x: x in Sprod, zip(frame2.datetime,frame2[what_is_same]))
+    frame1 = frame1[cond1]
+    frame2 = frame2[cond2]
+    return frame1, frame2
 
 def DataBaseline(alist,basename,polar):
     condB = (alist['baseline']==basename)
