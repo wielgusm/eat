@@ -213,6 +213,27 @@ def match_2_dataframes(frame1, frame2, what_is_same=None):
     frame2 = frame2[cond2]
     return frame1, frame2
 
+def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
+#what_is_same, e.g., triangle, then for given datetime matches only same triangles
+    frame1['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame1['datetime'])
+    frame2['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame2['datetime'])    
+    if what_is_same==None:
+        S1 = set(frame1.round_time)
+        S2 = set(frame2.round_time)
+        Sprod = S1&S2
+        cond1 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
+        cond2 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
+    else: 
+        S1 = set(zip(frame1.round_time,frame1[what_is_same]))
+        S2 = set(zip(frame2.round_time,frame2[what_is_same]))
+        Sprod = S1&S2
+        cond1 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
+        cond2 = map(lambda x: x in Sprod, zip(frame2.round_time,frame2[what_is_same]))
+    frame1 = frame1[cond1]
+    frame2 = frame2[cond2]
+    return frame1, frame2
+
+
 def use_measured_circ_std_as_sigmaCP(bsp):
     bsp.loc[:,'sigmaCP'] = bsp.loc[:,'circ_sigma']
     return bsp
