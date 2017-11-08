@@ -220,7 +220,7 @@ def initialize_falist(path_file):
     AIPS = add_track_expt(AIPS)
     AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS['phase']*np.pi/180)
     AIPS['std'] = AIPS['amp']
-    AIPS = AIPS.groupby(('expt_no','track','datetime','baseline')).agg({'vis': np.mean, 'std': np.std, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x)})
+    AIPS = AIPS.groupby(('expt_no','track','datetime','baseline')).agg({'vis': np.mean, 'std': np.std, 'sigma': lambda x: np.std(x)/len(x)})
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['phase'] = np.angle(AIPS['vis'])*180/np.pi
     AIPS = add_source_polar(AIPS,filename)
@@ -277,7 +277,8 @@ def coh_average(AIPS, tcoh = 5.):
     AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
     AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS['phase']*np.pi/180)
     AIPS = AIPS[['datetime','baseline','source','polarization','vis','std','sigma','track','expt_no','scan_no_tot','round_time']]
-    AIPS = AIPS.groupby(('baseline','source','polarization','track','expt_no','scan_no_tot','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x), 'std': lambda x: np.sqrt(np.sum(x**2))/len(x)})
+    AIPS = AIPS.groupby(('baseline','source','polarization','track','expt_no','scan_no_tot','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x), 'std': lambda x: np.sqrt(np.sum(x**2)/len(x))  })
+    #std after agg here is a sample std on 1s segment, 1 frequency channel
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['phase'] = np.angle(AIPS['vis'])*180/np.pi

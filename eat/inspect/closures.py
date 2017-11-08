@@ -1,4 +1,4 @@
-import sys, os, datetime
+import sys, os, datetime, itertools
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -71,6 +71,8 @@ def baselines2triangles(basel):
 
 def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
     alist = alist[alist['polarization']==polar]
+    if 'scan_id' not in alist.columns:
+        alist.loc[:,'scan_id'] = alist.loc[:,'scan_no_tot']
     triL = list_all_triangles(alist)
     tri_baseL, sgnL = triangles2baselines(triL,alist)
     #this is done twice to remove some non-present triangles
@@ -90,12 +92,14 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         #throw away times without full triangle
         tlist = alist_Tri.groupby('datetime').filter(lambda x: len(x) > 2)
         tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
+        
+
         for cou2 in range(3):
             tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phaseType] *= signat[cou2]*np.pi/180.
         tlist.loc[:,'sigma'] = 1./tlist.loc[:,'snr']**2 #put 1/snr**2 in the sigma column to aggregate
         bsp = tlist.groupby(('expt_no','source','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
         #sigma above is the CLOSURE PHASE ERROR
-        
+        #print(bsp.columns)
         bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
         bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
         bsp.loc[:,'sigma'] = bsp.loc[:,'amp']*bsp.loc[:,'sigma'] #sigma of bispectrum
@@ -108,6 +112,7 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         bsp.loc[:,'sigmaCP'] = 1./bsp.loc[:,'snr']*180./np.pi #deg
         bsp_out = pd.concat([bsp_out, bsp])
     bsp_out = bsp_out.reset_index()
+    #print(bsp_out.columns)
     bsp_out = bsp_out[['datetime','source','triangle','polarization','cphase','sigmaCP','amp','sigma','snr','scan_id','expt_no']] 
     
     return bsp_out
@@ -131,19 +136,40 @@ def only_non_trivial_triangles(bsp):
 
 def coh_average_bsp(AIPS, tcoh = 5.):
     AIPS.loc[:,'vis'] = AIPS.loc[:,'vis'] = AIPS.loc[:,'amp']*np.exp(1j*AIPS.loc[:,'cphase']*np.pi/180)
-    
+    AIPS.loc[:,'circ_sigma'] = AIPS.loc[:,'cphase']
     if tcoh == 'scan':
-        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigmaCP','snr','scan_id','expt_no']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2))})
+        AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigmaCP','snr','scan_id','expt_no','circ_sigma']]
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean})
     else:
         AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
         AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)) })
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean })
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
-    AIPS = AIPS[['datetime','triangle','source','polarization','amp', 'cphase', 'sigmaCP','snr','expt_no','scan_id']]
+    AIPS = AIPS[['datetime','triangle','source','polarization','amp', 'cphase', 'sigmaCP','snr','expt_no','scan_id','circ_sigma']]
     return AIPS
+
+def circular_mean(theta):
+    theta = np.asarray(theta)*np.pi/180.
+    C = np.mean(np.cos(theta))
+    S = np.mean(np.sin(theta))
+    mt = np.arctan2(S,C)*180./np.pi
+    return mt
+
+def circular_std(theta):
+    theta = np.asarray(theta)*np.pi/180.
+    C = np.mean(np.cos(theta))
+    S = np.mean(np.sin(theta))
+    st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi
+    return st
+
+def circular_std_of_mean(theta):
+    theta = np.asarray(theta)*np.pi/180.
+    C = np.mean(np.cos(theta))
+    S = np.mean(np.sin(theta))
+    st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi/np.sqrt(len(theta))
+    return st
 
 def phase_diff(v1,v2):
     v2 = np.asarray(np.mod(v2,360) )
@@ -186,6 +212,10 @@ def match_2_dataframes(frame1, frame2, what_is_same=None):
     frame1 = frame1[cond1]
     frame2 = frame2[cond2]
     return frame1, frame2
+
+def use_measured_circ_std_as_sigmaCP(bsp):
+    bsp.loc[:,'sigmaCP'] = bsp.loc[:,'circ_sigma']
+    return bsp
 
 def DataBaseline(alist,basename,polar):
     condB = (alist['baseline']==basename)
