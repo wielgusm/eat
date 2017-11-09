@@ -233,6 +233,30 @@ def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
     frame2 = frame2[cond2]
     return frame1, frame2
 
+def match_2_bsp_frames(frame1,frame2,dt = 15.):
+    frame1_lo_ll = frame1[(frame1.band=='lo')&(frame1.polarization=='LL')].reset_index(drop='True')
+    frame1_hi_ll = frame1[(frame1.band=='hi')&(frame1.polarization=='LL')].reset_index(drop='True')
+    frame1_lo_rr = frame1[(frame1.band=='lo')&(frame1.polarization=='RR')].reset_index(drop='True')
+    frame1_hi_rr = frame1[(frame1.band=='hi')&(frame1.polarization=='RR')].reset_index(drop='True')
+
+    frame2_lo_ll = frame2[(frame2.band=='lo')&(frame2.polarization=='LL')].reset_index(drop='True')
+    frame2_hi_ll = frame2[(frame2.band=='hi')&(frame2.polarization=='LL')].reset_index(drop='True')
+    frame2_lo_rr = frame2[(frame2.band=='lo')&(frame2.polarization=='RR')].reset_index(drop='True')
+    frame2_hi_rr = frame2[(frame2.band=='hi')&(frame2.polarization=='RR')].reset_index(drop='True')
+
+    frame1_lo_ll, frame2_lo_ll = match_2_dataframes_approxT(frame1_lo_ll, frame2_lo_ll, 'triangle', dt)
+    frame1_hi_ll, frame2_hi_ll = match_2_dataframes_approxT(frame1_hi_ll, frame2_hi_ll, 'triangle', dt)
+    frame1_lo_rr, frame2_lo_rr = match_2_dataframes_approxT(frame1_lo_rr, frame2_lo_rr, 'triangle', dt)
+    frame1_hi_rr, frame2_hi_rr = match_2_dataframes_approxT(frame1_hi_rr, frame2_hi_rr, 'triangle', dt)
+
+    frame1 = pd.concat([frame1_lo_ll,frame1_hi_ll,frame1_lo_rr,frame1_hi_rr], ignore_index=True)
+    frame2 = pd.concat([frame2_lo_ll,frame2_hi_ll,frame2_lo_rr,frame2_hi_rr], ignore_index=True)
+
+    return frame1, frame2
+
+def add_band(bisp,band):
+    bisp['band'] = [band]*np.shape(bisp)[0]
+    return bisp
 
 def use_measured_circ_std_as_sigmaCP(bsp):
     bsp.loc[:,'sigmaCP'] = bsp.loc[:,'circ_sigma']
