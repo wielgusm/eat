@@ -1,7 +1,12 @@
 import sys, os, datetime, itertools
+import scipy.special as ss
+import scipy.optimize as so
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from eat.io import hops, util
+from eat.hops import util as hu
+from eat.aips import aips2alist as a2a
 
 hrs = [0,24.,48.]
 
@@ -139,11 +144,11 @@ def coh_average_bsp(AIPS, tcoh = 5.):
     AIPS.loc[:,'circ_sigma'] = AIPS.loc[:,'cphase']
     if tcoh == 'scan':
         AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigmaCP','snr','scan_id','expt_no','circ_sigma']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean})
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif})
     else:
         AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
         AIPS = AIPS[['datetime','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
-        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean })
+        AIPS = AIPS.groupby(('triangle','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif })
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
@@ -171,6 +176,76 @@ def circular_std_of_mean(theta):
     st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi/np.sqrt(len(theta))
     return st
 
+def diff_side(x):
+    x = np.asarray(x)
+    xp = x[1:]
+    xm = x[:-1]
+    xdif = xp-xm
+    dx = np.angle(np.exp(1j*xdif*np.pi/180.))*180./np.pi
+    return dx
+
+
+
+def circular_std_of_mean_dif(theta):
+    theta = np.asarray(theta)*np.pi/180.
+    #dif_theta = np.diff(theta)
+    dif_theta = diff_side(theta)
+    C = np.mean(np.cos(dif_theta))
+    S = np.mean(np.sin(dif_theta))
+    st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi/np.sqrt(len(theta))/np.sqrt(2)
+    return st
+
+def std_dif(amp):
+    amp = np.diff(np.asarray(amp))
+    return np.std(amp)/np.sqrt(2)
+
+def unbiased_sigma(amp):
+    amp2 = np.asarray(amp)**2
+    m = np.mean(amp2)
+    s = np.std(amp2)
+    delta = m**2 - s**2
+    if delta >= 0:
+        s0 = np.sqrt((m -np.sqrt(delta))/2.)
+    else:
+        s0 = np.sqrt(m/2.)
+    return s0
+
+def unbiased_amp(amp):
+    amp2 = np.asarray(amp)**2
+    m = np.mean(amp2)
+    s = np.std(amp2)
+    delta = m**2 - s**2
+    if delta >=0:
+        a0 = delta**(0.25)
+    else:
+        a0 = 0.*(m**2)**(0.25)
+    return a0
+
+def unbiased_amp2(amp):
+    amp = np.asarray(amp)
+    m = np.mean(amp); q = np.mean(amp**2)
+    eq_for_sig = lambda x: x*np.sqrt(np.pi/2.)*ss.hyp1f1(-0.5, 1., 1. - q/2./x**2) - m
+    try:
+        Esig = so.brentq(eq_for_sig, 1.e-10, 1.5*np.std(amp))
+    except ValueError:
+        Esig = np.std(amp)
+    delta = q - 2.*Esig**2
+    if delta >=0:
+        EA0 = np.sqrt(delta)
+    else:
+        EA0 = 0.
+    return EA0
+
+def unbiased_sigma2(amp):
+    amp = np.asarray(amp)
+    m = np.mean(amp); q = np.mean(amp**2)
+    eq_for_sig = lambda x: x*np.sqrt(np.pi/2.)*ss.hyp1f1(-0.5, 1., 1. - q/2./x**2) - m
+    try:
+        Esig = so.brentq(eq_for_sig, 1.e-10, 1.5*np.std(amp))
+    except ValueError:
+        Esig = np.std(amp)
+    return Esig
+
 def phase_diff(v1,v2):
     v2 = np.asarray(np.mod(v2,360) )
     v1 = np.asarray(np.mod(v1,360) )
@@ -184,16 +259,114 @@ def phase_diff(v1,v2):
     v2[e3 < e1] = v2c[e3 < e1]
     return v2
 
-def coh_average_vis(AIPS, tcoh = 5.):
+def coh_average_vis(AIPS, tcoh = 5.,phaseType='resid_phas'):
+    #print(AIPS.columns)
+    if 'scan_no_tot' not in AIPS.columns:
+        AIPS.loc[:,'scan_no_tot'] = AIPS.loc[:,'scan_id']
+    if 'sigma' not in AIPS.columns:
+        AIPS.loc[:,'sigma'] = AIPS.loc[:,'amp']/AIPS.loc[:,'snr']
+    if 'std' not in AIPS.columns:
+        AIPS.loc[:,'std'] = AIPS.loc[:,'sigma']
+
+    AIPS['track'] = map(lambda x: a2a.expt2track[x],AIPS['expt_no'])
     AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
-    AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS['phase']*np.pi/180)
+    AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS[phaseType]*np.pi/180)
     AIPS = AIPS[['datetime','baseline','source','polarization','vis','std','sigma','track','expt_no','scan_no_tot','round_time']]
     AIPS = AIPS.groupby(('baseline','source','polarization','track','expt_no','scan_no_tot','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x), 'std': lambda x: np.sqrt(np.sum(x**2))/len(x)})
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
-    AIPS['phase'] = np.angle(AIPS['vis'])*180/np.pi
-    AIPS = AIPS[['datetime','baseline','source','polarization','amp', 'phase','std', 'sigma','track','expt_no','scan_no_tot']]
+    AIPS[phaseType] = np.angle(AIPS['vis'])*180/np.pi
+    AIPS = AIPS[['datetime','baseline','source','polarization','amp', phaseType,'std', 'sigma','track','expt_no','scan_no_tot']]
     return AIPS
+
+def incoh_average_amp(AIPS, tinc = 'scan',scale_amp=1.):
+    AIPS['sigmaB'] = AIPS['amp']
+    AIPS['sigma'] = AIPS['amp'] 
+    AIPS['ampB'] = AIPS['amp']
+
+    if 'scan_id' not in AIPS.columns:   
+        AIPS['scan_id'] = AIPS['scan_no_tot']
+    if tinc == 'scan':
+        AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','scan_id','expt_no','sigma','sigmaB']]
+        AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 'sigmaB': lambda x: np.std(x)/np.sqrt(len(x)), 'sigma': lambda x: unbiased_sigma(x)/np.sqrt(len(x)) })
+    else:
+        AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
+        AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','sigma','sigmaB','scan_id','expt_no','round_time']]
+        AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 'sigmaB': lambda x: np.std(x)/np.sqrt(len(x)), 'sigma': lambda x: unbiased_sigma(x)/np.sqrt(len(x)) })
+    
+    
+    AIPS.loc[:,'amp'] = scale_amp*AIPS.loc[:,'amp']
+    AIPS.loc[:,'ampB'] = scale_amp*AIPS.loc[:,'ampB']
+    AIPS.loc[:,'sigmaB'] = scale_amp*AIPS.loc[:,'sigmaB']
+    AIPS.loc[:,'sigma'] = scale_amp*AIPS.loc[:,'sigma']
+    
+    return AIPS.reset_index()
+
+
+    AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
+    AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS[phaseType]*np.pi/180)
+    AIPS = AIPS[['datetime','baseline','source','polarization','vis','std','sigma','track','expt_no','scan_no_tot','round_time']]
+    AIPS = AIPS.groupby(('baseline','source','polarization','track','expt_no','scan_no_tot','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x), 'std': lambda x: np.sqrt(np.sum(x**2))/len(x)})
+    AIPS = AIPS.reset_index()
+    AIPS['amp'] = np.abs(AIPS['vis'])
+    AIPS[phaseType] = np.angle(AIPS['vis'])*180/np.pi
+    AIPS = AIPS[['datetime','baseline','source','polarization','amp', phaseType,'std', 'sigma','track','expt_no','scan_no_tot']]
+    return AIPS
+
+def add_round_time(frame, dt = 20.):
+    frame.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame['datetime'])
+    return frame
+
+def add_polar_frac(frame, dt = 20.):
+    frame = frame[map(lambda x: x[0]!=x[1], frame.baseline)]
+    frame = add_round_time(frame, dt)
+    frame.loc[:,'polar_frac'] = [0.]*np.shape(frame)[0]
+    frameG = frame.groupby(('baseline','round_time')).filter(lambda x: len(x) >1)
+    frame = frame.groupby(('baseline','round_time')).filter(lambda x: len(x) <5)
+    frame = frame.groupby(('baseline','round_time')).filter(lambda x: ('RL' in list(x.polarization)  )|('LR' in list(x.polarization)) )
+    #print(frame)
+    
+    #frame_LL_RR = frame[(frame.polarization=='LL')|(frame.polarization=='RR')]
+    
+    polar_fracL = []
+    #for index, row in frame_LL_RR.iterrows():
+    for index, row in frame.iterrows():
+        dt_foo = row.round_time
+        base_foo = row.baseline
+        amp_RL = list(frame[(frame.round_time==dt_foo)&(frame.baseline==base_foo)&(frame.polarization=='RL')].amp)
+        amp_LR = list(frame[(frame.round_time==dt_foo)&(frame.baseline==base_foo)&(frame.polarization=='LR')].amp)
+        if len(amp_RL)==0:
+            amp_RL = 0.0
+        else: amp_RL = amp_RL[0]
+        if len(amp_LR)==0:
+            amp_LR = 0.0
+        else: amp_LR = amp_LR[0]
+        amp_cross = np.maximum(amp_RL,amp_LR)
+        polar_fracL.append(amp_cross/row.amp)
+
+    #frame_LL_RR['polar_frac']= polar_fracL
+    frame['polar_frac']= polar_fracL
+    return frame
+
+def f_help(group):
+    fooRL =list(group[group['polarization']=='RL'].amp)
+    fooLR =list(group[group['polarization']=='LR'].amp)
+    fooRR =list(group[group['polarization']=='RR'].amp)
+    fooLL =list(group[group['polarization']=='LL'].amp)
+    if len(fooRL)==0:
+        fooRL = 0.0
+    else: fooRL = fooRL[0]
+    if len(fooLR)==0:
+        fooLR = 0.0
+    else: fooLR = fooLR[0]
+    if len(fooRR)==0:
+        fooRR = 0.0
+    else: fooRR = fooRR[0]
+    if len(fooLL)==0:
+        fooLL = 0.0
+    else: fooLL = fooLL[0]
+    return (fooRR,fooLL,fooRL,fooLR)
+
 
 def match_2_dataframes(frame1, frame2, what_is_same=None):
 #what_is_same, e.g., triangle, then for given datetime matches only same triangles    
@@ -233,7 +406,9 @@ def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
     frame2 = frame2[cond2]
     return frame1, frame2
 
-def match_2_bsp_frames(frame1,frame2,dt = 15.):
+def match_2_bsp_frames(frame1,frame2,match_what='pipeline',dt = 15.,what_is_same='triangle'):
+
+    
     frame1_lo_ll = frame1[(frame1.band=='lo')&(frame1.polarization=='LL')].reset_index(drop='True')
     frame1_hi_ll = frame1[(frame1.band=='hi')&(frame1.polarization=='LL')].reset_index(drop='True')
     frame1_lo_rr = frame1[(frame1.band=='lo')&(frame1.polarization=='RR')].reset_index(drop='True')
@@ -244,13 +419,31 @@ def match_2_bsp_frames(frame1,frame2,dt = 15.):
     frame2_lo_rr = frame2[(frame2.band=='lo')&(frame2.polarization=='RR')].reset_index(drop='True')
     frame2_hi_rr = frame2[(frame2.band=='hi')&(frame2.polarization=='RR')].reset_index(drop='True')
 
-    frame1_lo_ll, frame2_lo_ll = match_2_dataframes_approxT(frame1_lo_ll, frame2_lo_ll, 'triangle', dt)
-    frame1_hi_ll, frame2_hi_ll = match_2_dataframes_approxT(frame1_hi_ll, frame2_hi_ll, 'triangle', dt)
-    frame1_lo_rr, frame2_lo_rr = match_2_dataframes_approxT(frame1_lo_rr, frame2_lo_rr, 'triangle', dt)
-    frame1_hi_rr, frame2_hi_rr = match_2_dataframes_approxT(frame1_hi_rr, frame2_hi_rr, 'triangle', dt)
+    if match_what=='pipeline':
+        #match everything from first frame to second, keeping polarization and band
+        frame1_lo_ll, frame2_lo_ll = match_2_dataframes_approxT(frame1_lo_ll, frame2_lo_ll, what_is_same, dt)
+        frame1_hi_ll, frame2_hi_ll = match_2_dataframes_approxT(frame1_hi_ll, frame2_hi_ll, what_is_same, dt)
+        frame1_lo_rr, frame2_lo_rr = match_2_dataframes_approxT(frame1_lo_rr, frame2_lo_rr, what_is_same, dt)
+        frame1_hi_rr, frame2_hi_rr = match_2_dataframes_approxT(frame1_hi_rr, frame2_hi_rr, what_is_same, dt)
 
-    frame1 = pd.concat([frame1_lo_ll,frame1_hi_ll,frame1_lo_rr,frame1_hi_rr], ignore_index=True)
-    frame2 = pd.concat([frame2_lo_ll,frame2_hi_ll,frame2_lo_rr,frame2_hi_rr], ignore_index=True)
+        frame1 = pd.concat([frame1_lo_ll,frame1_hi_ll,frame1_lo_rr,frame1_hi_rr], ignore_index=True)
+        frame2 = pd.concat([frame2_lo_ll,frame2_hi_ll,frame2_lo_rr,frame2_hi_rr], ignore_index=True)
+
+    elif match_what=='polarization':
+        #match ll polarization from the first frame to rr polarization in the second frame, keepieng band
+        frame1_lo_ll, frame2_lo_rr = match_2_dataframes_approxT(frame1_lo_ll, frame2_lo_rr, what_is_same, dt)
+        frame1_hi_ll, frame2_hi_rr = match_2_dataframes_approxT(frame1_hi_ll, frame2_hi_rr, what_is_same, dt)
+        
+        frame1 = pd.concat([frame1_lo_ll,frame1_hi_ll], ignore_index=True)
+        frame2 = pd.concat([frame2_lo_rr,frame2_hi_rr], ignore_index=True)
+
+    elif match_what=='band':
+        #match lo band in first frame to hi band in 2nd frame, keeping the polarizations equal
+        frame1_lo_ll, frame2_hi_ll = match_2_dataframes_approxT(frame1_lo_ll, frame2_hi_ll, what_is_same, dt)
+        frame1_lo_rr, frame2_hi_rr = match_2_dataframes_approxT(frame1_lo_rr, frame2_hi_rr, what_is_same, dt)
+        
+        frame1 = pd.concat([frame1_lo_ll,frame1_lo_rr], ignore_index=True)
+        frame2 = pd.concat([frame2_hi_ll,frame2_hi_rr], ignore_index=True)
 
     return frame1, frame2
 
@@ -258,9 +451,43 @@ def add_band(bisp,band):
     bisp['band'] = [band]*np.shape(bisp)[0]
     return bisp
 
+def add_error(bisp,to_what='cphase'):
+    
+    if to_what=='cphase':
+        bisp['TotErr'] = np.mod(np.asarray(bisp['cphase']),360.)
+        bisp['TotErr'] = np.minimum( np.asarray(bisp['TotErr']), np.abs(np.asarray(bisp['TotErr']) -360.))
+        bisp['RelErr'] = np.asarray(bisp['TotErr'])/np.asarray(bisp['sigmaCP'])
+    elif to_what=='amp':
+        bisp['TotErr'] = bisp['amp']
+        bisp['RelErr'] = np.asarray(bisp['TotErr'])/np.asarray(bisp['sigma'])
+    return bisp
+
 def use_measured_circ_std_as_sigmaCP(bsp):
     bsp.loc[:,'sigmaCP'] = bsp.loc[:,'circ_sigma']
     return bsp
+
+def get_bsp_from_alist(alist_path,tcoh = 5.,tav = 'scan',phaseType='resid_phas',typeA='alist',band='',data_int_time=1.):
+
+    if typeA=='alist':
+        alist = hops.read_alist(alist_path)
+    elif typeA=='pickle':
+        alist = pd.read_pickle(alist_path)
+
+    if data_int_time < tcoh:
+        alist = coh_average_vis(alist, tcoh, phaseType)
+
+    bsp_ll = all_bispectra_polar(alist,'LL',phaseType)
+    bsp_rr = all_bispectra_polar(alist,'RR',phaseType) 
+    bsp = pd.concat([bsp_ll,bsp_rr],ignore_index=True) 
+    bsp_av = coh_average_bsp(bsp,tav)
+
+    bsp_av =use_measured_circ_std_as_sigmaCP(bsp_av)
+    bsp_av = add_error(bsp_av)
+
+    if band != '':
+        bsp_av = add_band(bsp_av,band)
+
+    return bsp_av
 
 def DataBaseline(alist,basename,polar):
     condB = (alist['baseline']==basename)
@@ -843,3 +1070,16 @@ def DataQuadrangle3(alist,Quad,pol, debias=1):
                             'gmst': 'min', 'datetime': 'min', 'sigma' : lambda x: np.sqrt(np.sum(x)) })
     quadAmp.loc[:,'sigma'] = quadAmp.loc[:,'sigma']*quadAmp.loc[:,'amp']
     return quadAmp
+
+def get_closure_phases(path_alist, tcoh, tav ='scan',phaseType='phase'):
+
+    falist = pd.read_pickle(path_ailist)
+    falist_tcoh = a2a.coh_average(falist, tcoh)
+    bisp_LL = all_bispectra_polar(falist_tcoh,'LL',phaseType)
+    bisp_RR = all_bispectra_polar(falist_tcoh,'RR',phaseType)
+    bisp_LL = coh_average_bsp(bisp_LL,tav)
+    bisp_RR = coh_average_bsp(bisp_RR,tav)
+    bisp_LL= use_measured_circ_std_as_sigmaCP(bisp_LL)
+    bisp_RR = use_measured_circ_std_as_sigmaCP(bisp_RR)
+    bisp = pd.concat([bisp_LL, bisp_RR],ignore_index=True)
+

@@ -350,9 +350,12 @@ def add_band_error(bisp,band):
     return bisp
 
 
-def CP_error_agg(bisp, bispRel, agg_type='triangle'):
+def CP_error_agg(bisp, bispRel, agg_type='triangle',match=False,inflate_errors_factor = 1.):
 
-    bisp, bispRel = match_2_bsp_frames(bisp,bispRel,dt = 60.)
+    bisp['sigmaCP'] = inflate_errors_factor*bisp['sigmaCP']
+    bispRel['sigmaCP'] = inflate_errors_factor*bispRel['sigmaCP']
+    if match==True:
+        bisp, bispRel = match_2_bsp_frames(bisp,bispRel,dt = 60.)
     sigmaTotal = np.sqrt(np.asarray(bisp['sigmaCP'])**2+np.asarray(bispRel['sigmaCP'])**2)
     bisp['sigmaTotal'] = sigmaTotal
     distTotal = np.asarray(np.abs(((np.asarray(bisp['cphase'])-np.asarray(bispRel['cphase'])))))
@@ -365,6 +368,9 @@ def CP_error_agg(bisp, bispRel, agg_type='triangle'):
     elif agg_type=='source':
         all_agg = sorted(list( set(bisp.source) ))
         cond_agg = lambda x: (bisp.source == x)
+    elif agg_type=='expt_no':
+        all_agg = sorted(list( set(bisp.expt_no) ))
+        cond_agg = lambda x: (bisp.expt_no == x)
     elif agg_type=='station':
         AllTri = sorted(list( set(bisp.triangle) ))
         all_agg = list(set(''.join(list(set(bisp.triangle)))))
@@ -379,17 +385,22 @@ def CP_error_agg(bisp, bispRel, agg_type='triangle'):
     TriStat = pd.DataFrame({})
     TriStat[agg_type] = all_agg
     scans_tot = [np.shape(bisp[cond_agg(x)])[0] for x in all_agg]
+    scans_1sig = [np.shape(bisp[( cond_agg(x) )&(bisp.distRel < 1.)])[0] for x in all_agg]
+    scans_2sig = [np.shape(bisp[( cond_agg(x) )&(bisp.distRel < 2.)])[0] for x in all_agg]
     scans_3sig = [np.shape(bisp[( cond_agg(x) )&(bisp.distRel < 3.)])[0] for x in all_agg]
     TriStat['sc_total'] = scans_tot
     TriStat['sc_3sig'] = scans_3sig
+    TriStat['sc_1sig_proc'] = np.asarray(map(float,scans_1sig))/np.asarray(map(float,TriStat['sc_total']))
+    TriStat['sc_2sig_proc'] = np.asarray(map(float,scans_2sig))/np.asarray(map(float,TriStat['sc_total']))
     TriStat['sc_3sig_proc'] = np.asarray(map(float,TriStat['sc_3sig']))/np.asarray(map(float,TriStat['sc_total']))
-    TriStat['MedianAbs'] = [np.median(np.asarray(list(bisp.loc[( cond_agg(x) ),'distTotal']))) for x in all_agg]
-    TriStat['MedianSigma'] = [np.median(np.asarray(list(bisp.loc[( cond_agg(x) ),'sigmaTotal']))) for x in all_agg]
+    TriStat['MedianAbs'] = [np.nanmedian(np.asarray(list(bisp.loc[( cond_agg(x) ),'distTotal']))) for x in all_agg]
+    TriStat['MedianSigma'] = [np.nanmedian(np.asarray(list(bisp.loc[( cond_agg(x) ),'sigmaTotal']))) for x in all_agg]
     TriStat = TriStat.sort_values('sc_3sig_proc')
     return TriStat, bisp
 
-def triv_CP_error_agg(bisp,agg_type='triangle'):
+def triv_CP_error_agg(bisp,agg_type='triangle',inflate_errors_factor = 1.):
 
+    bisp['sigmaCP'] = inflate_errors_factor*bisp['sigmaCP']
     #get errors from zero
     bisp['TotErr'] = np.mod(np.asarray(bisp['cphase']),360.)
     bisp['TotErr'] = np.minimum( np.asarray(bisp['TotErr']), np.abs(np.asarray(bisp['TotErr']) -360.))
@@ -401,6 +412,9 @@ def triv_CP_error_agg(bisp,agg_type='triangle'):
     elif agg_type=='source':
         all_agg = sorted(list( set(bisp.source) ))
         cond_agg = lambda x: (bisp.source == x)
+    elif agg_type=='expt_no':
+        all_agg = sorted(list( set(bisp.expt_no) ))
+        cond_agg = lambda x: (bisp.expt_no == x)
     elif agg_type=='station':
         AllTri = sorted(list( set(bisp.triangle) ))
         all_agg = list(set(''.join(list(set(bisp.triangle)))))
@@ -415,14 +429,78 @@ def triv_CP_error_agg(bisp,agg_type='triangle'):
     TriStat = pd.DataFrame({})
     TriStat[agg_type] = all_agg
     scans_tot = [np.shape(bisp[cond_agg(x)])[0] for x in all_agg]
+    scans_1sig = [np.shape(bisp[( cond_agg(x) )&(bisp.RelErr < 1.)])[0] for x in all_agg]
+    scans_2sig = [np.shape(bisp[( cond_agg(x) )&(bisp.RelErr < 2.)])[0] for x in all_agg]
     scans_3sig = [np.shape(bisp[( cond_agg(x) )&(bisp.RelErr < 3.)])[0] for x in all_agg]
     TriStat['sc_total'] = scans_tot
     TriStat['sc_3sig'] = scans_3sig
+    TriStat['sc_1sig_proc'] = np.asarray(map(float,scans_1sig))/np.asarray(map(float,TriStat['sc_total']))
+    TriStat['sc_2sig_proc'] = np.asarray(map(float,scans_2sig))/np.asarray(map(float,TriStat['sc_total']))
     TriStat['sc_3sig_proc'] = np.asarray(map(float,TriStat['sc_3sig']))/np.asarray(map(float,TriStat['sc_total']))
-    TriStat['MedianAbs'] = [np.median(np.asarray(list(bisp.loc[( cond_agg(x) ),'TotErr']))) for x in all_agg]
-    TriStat['MedianSigma'] = [np.median(np.asarray(list(bisp.loc[( cond_agg(x) ),'sigmaCP']))) for x in all_agg]
+    TriStat['MedianAbs'] = [np.nanmedian(np.asarray(list(bisp.loc[( cond_agg(x) ),'TotErr']))) for x in all_agg]
+    TriStat['MedianSigma'] = [np.nanmedian(np.asarray(list(bisp.loc[( cond_agg(x) ),'sigmaCP']))) for x in all_agg]
     TriStat = TriStat.sort_values('sc_3sig_proc')
     return TriStat
+
+def amp_error_agg(frame, frameRel, agg_type='baseline',match=False, debias=False,inflate_errors_factor = 1. ):
+
+    
+    if debias==True:
+        which_amp = 'amp'
+        which_sigma = 'sigma'
+    else:
+        which_amp = 'ampB'
+        which_sigma = 'sigmaB'
+
+    frame[which_sigma] = inflate_errors_factor*frame[which_sigma] 
+    frameRel[which_sigma] = inflate_errors_factor*frameRel[which_sigma] 
+
+    if match==True:
+        frame, frameRel = match_2_bsp_frames(frame,frameRel,dt = 60.,what_is_same='baseline')
+    sigmaTotal = np.sqrt(np.asarray(frame[which_sigma])**2+np.asarray(frameRel[which_sigma])**2)
+    frame['sigmaTotal'] = sigmaTotal
+    #distTotal = np.asarray(np.abs(((np.asarray(frame[which_amp])-np.asarray(frameRel[which_amp])))))
+    distTotal = np.asarray((((np.asarray(frame[which_amp])-np.asarray(frameRel[which_amp])))))
+    frame['distTotal'] = distTotal
+    frame['distRel'] = (distTotal)/sigmaTotal
+    frame['distRelAmp'] = (distTotal)/frame[which_amp]
+    frame['sigmaRelAmp'] = sigmaTotal/frame[which_amp]
+    frame['AHObyAAI'] = np.asarray(frame[which_amp])/np.asarray(frameRel[which_amp])
+
+    if agg_type=='baseline':
+        all_agg = sorted(list( set(frame.baseline) ))
+        cond_agg = lambda x: (frame.baseline == x)
+    elif agg_type=='source':
+        all_agg = sorted(list( set(frame.source) ))
+        cond_agg = lambda x: (frame.source == x)
+    elif agg_type=='expt_no':
+        all_agg = sorted(list( set(frame.expt_no) ))
+        cond_agg = lambda x: (frame.expt_no == x)
+    elif agg_type=='station':
+        AllBa = sorted(list( set(frame.baseline) ))
+        all_agg = list(set(''.join(list(set(frame.baseline)))))
+        cond_agg = lambda x: map(lambda y: x in y, frame.baseline)
+
+    BaStat = pd.DataFrame({})
+    BaStat[agg_type] = all_agg
+    scans_tot = [np.shape(frame[cond_agg(x)])[0] for x in all_agg]
+    scans_1sig = [np.shape(frame[( cond_agg(x) )&(frame.distRel < 1.)])[0] for x in all_agg]
+    scans_2sig = [np.shape(frame[( cond_agg(x) )&(frame.distRel < 2.)])[0] for x in all_agg]
+    scans_3sig = [np.shape(frame[( cond_agg(x) )&(frame.distRel < 3.)])[0] for x in all_agg]
+    BaStat['sc_total'] = scans_tot
+    BaStat['sc_3sig'] = scans_3sig
+    BaStat['sc_1sig_proc'] = np.asarray(map(float,scans_1sig))/np.asarray(map(float,BaStat['sc_total']))
+    BaStat['sc_2sig_proc'] = np.asarray(map(float,scans_2sig))/np.asarray(map(float,BaStat['sc_total']))
+    BaStat['sc_3sig_proc'] = np.asarray(map(float,BaStat['sc_3sig']))/np.asarray(map(float,BaStat['sc_total']))
+    BaStat['MedianAbs'] = [np.nanmedian(np.asarray(list(frame.loc[( cond_agg(x) ),'distTotal']))) for x in all_agg]
+    BaStat['MedianRelAbs'] = [np.nanmedian(np.asarray(list(frame.loc[( cond_agg(x) ),'distTotal']))/np.asarray(list(frame.loc[( cond_agg(x) ),'amp'])) ) for x in all_agg]
+    BaStat['MedianSigma'] = [np.nanmedian(np.asarray(list(frame.loc[( cond_agg(x) ),'sigmaTotal']))) for x in all_agg]
+    BaStat['MedianRelSigma'] = [np.nanmedian(np.asarray(list(frame.loc[( cond_agg(x) ),'sigmaTotal']))/np.asarray(list(frame.loc[( cond_agg(x) ),'amp']))  ) for x in all_agg]
+    BaStat = BaStat.sort_values('sc_3sig_proc')
+    return BaStat, frame
+
+
+
 
 
 '''
