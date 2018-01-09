@@ -1,3 +1,30 @@
+'''
+#This module allows to read in ANTAB files
+#match them with VEX schedules
+#and generate output SEFD files in a folder structure
+#single SEFD file columns are:
+#0) fractional MJD, 
+#1) square root of SEFD R-polarization,
+#2) zeros
+#3) square root of SEFD L-polarization, 
+#4) zeros
+#Maciek Wielgus, Nov/29/2017, maciek.wielgus@gmail.com
+
+#INSTRUCTION FOR USING APCAL MODULE
+import apcal as ap
+#provide path to ANTAB calibration files
+antab_path = 'ANTABS/'
+#provide path to VEX scans information
+vex_path = 'VexFiles/'
+#for which sources, antenas, nights we want to generate calibration
+sourL = ['OJ287','3C279']
+antL = ['S','J','P','Z','X','L','R','A']
+exptL = [3597,3598,3599,3600,3601]
+#run the SEFD files generator
+ap.get_sefds(antab_path,vex_path,sourL,antL,exptL)
+
+'''
+
 import pandas as pd
 import numpy as np
 import os, datetime
@@ -339,7 +366,8 @@ def generate_and_save_sefd_data(Tsys_full, dict_dpfu, dict_gfit, sourL=sourL, an
                 condS = (Tsys_full['source']==sour)
                 condA = (Tsys_full['antena']==ant)
                 condE = (Tsys_full['track']==expt2track[expt])
-                Tsys_local = Tsys_full.loc[condS&condA&condE]
+                condPositive = (Tsys_full['Tsys_st_L_lo']>0)&(Tsys_full['Tsys_st_R_lo']>0)&(Tsys_full['Tsys_st_R_hi']>0)&(Tsys_full['Tsys_st_L_hi']>0)
+                Tsys_local = Tsys_full.loc[condS&condA&condE&condPositive]
                 Tsys_local.loc[:,'sefd_lo_L'] = np.sqrt(Tsys_local['Tsys_st_L_lo']/dict_dpfu[(ant,'A')])
                 Tsys_local.loc[:,'sefd_lo_R'] = np.sqrt(Tsys_local['Tsys_st_R_lo']/dict_dpfu[(ant,'A')])
                 Tsys_local.loc[:,'sefd_hi_L'] = np.sqrt(Tsys_local['Tsys_st_L_hi']/dict_dpfu[(ant,'A')])
@@ -363,9 +391,9 @@ def generate_and_save_sefd_data(Tsys_full, dict_dpfu, dict_gfit, sourL=sourL, an
                     SEFDS_hi = SEFDS_hi.sort_values('mjd')
                     NameF_lo = dir_expt_LO+'/'+sour+'_'+Z2AZ[ant]+'.txt'
                     NameF_hi = dir_expt_HI+'/'+sour+'_'+Z2AZ[ant]+'.txt'
-                    if SEFDS_lo.shape[0]>2:
+                    if SEFDS_lo.shape[0]>0:
                         SEFDS_lo.to_csv(NameF_lo,sep=' ',index=False, header=False)
-                    if SEFDS_hi.shape[0]>2:
+                    if SEFDS_hi.shape[0]>0:
                         SEFDS_hi.to_csv(NameF_hi, sep=' ', index=False, header = False)
                     print(sour+'_'+Z2AZ[ant]+' ok')
                 except ValueError:
@@ -543,24 +571,3 @@ def get_sefds(antab_path ='ANTABS/', vex_path = 'VexFiles/', sourL=sourL,antL=an
     generate_and_save_sefd_data(Tsys_match, dict_dpfu, dict_gfit, sourL, antL, exptL)
 
 
-'''
-#INSTRUCTION FOR USING APCAL MODULE
-
-import apcal as ap
-
-#provide path to ANTAB calibration files
-antab_path = 'ANTABS/'
-
-#provide path to VEX scans information
-vex_path = 'VexFiles/'
-
-
-#for which sources, antenas, nights we want to generate calibration
-sourL = ['OJ287','3C279']
-antL = ['S','J','P','Z','X','L','R','A']
-exptL = [3597,3598,3599,3600,3601]
-
-#run the SEFD files generator
-ap.get_sefds(antab_path,vex_path,sourL,antL,exptL)
-
-'''
