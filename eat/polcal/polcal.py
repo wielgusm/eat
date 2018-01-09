@@ -1,6 +1,6 @@
 import numpy as np
-import sys
-sys.path.append('/Users/mwielgus/Works/MyEAT/eat/')
+#import sys
+#sys.path.append('/Users/mwielgus/Works/MyEAT/eat/')
 from eat.inspect import closures as cl
 
 lat_dict = {'A': -23.02922,
