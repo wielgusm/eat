@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys, os, datetime, itertools
 import scipy.special as ss
 import scipy.optimize as so
@@ -10,7 +11,7 @@ from eat.aips import aips2alist as a2a
 
 hrs = [0,24.,48.]
 
-def make_baselines_alphabetic(alist,what_phase = 'resid_phas'):
+def make_baselines_alphabetic(alist,what_phase='resid_phas'):
 
     baseL = list(set(alist.baseline))
     alist_out = pd.DataFrame({})
@@ -127,8 +128,8 @@ def quadrangles2baselines(quad,alist):
         baselines = [base0,base1,base2,base3]
         baselinesbo = [base0,base1,base2bo,base3bo]
         
-        baselinesSTR = map(lambda x: type(x)==str,baselines)
-        baselinesboSTR = map(lambda x: type(x)==str,baselinesbo)
+        baselinesSTR = list(map(lambda x: type(x)==str,baselines))
+        baselinesboSTR = list(map(lambda x: type(x)==str,baselinesbo))
         if all(baselinesSTR):
             foo_base.append(baselines)
         if all(baselinesboSTR):
@@ -191,18 +192,18 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
 
 def only_trivial_triangles(bsp,whichB = 'all'):
     if whichB =='AX':
-        condTri = map(lambda x: (('A' in x)&('X' in x)), bsp['triangle'])
+        condTri = list(map(lambda x: (('A' in x)&('X' in x)), bsp['triangle']))
     elif whichB =='JS':
-        condTri = map(lambda x: (('J' in x)&('S' in x)), bsp['triangle'])
+        condTri = list(map(lambda x: (('J' in x)&('S' in x)), bsp['triangle']))
     elif whichB =='JR':
-        condTri = map(lambda x: (('J' in x)&('R' in x)), bsp['triangle'])
+        condTri = list(map(lambda x: (('J' in x)&('R' in x)), bsp['triangle']))
     else:
-        condTri = map(lambda x: (('A' in x)&('X' in x))|(('J' in x)&('S' in x))|(('J' in x)&('R' in x)), bsp['triangle'])
+        condTri = list(map(lambda x: (('A' in x)&('X' in x))|(('J' in x)&('S' in x))|(('J' in x)&('R' in x)), bsp['triangle']))
     bsp = bsp[condTri]
     return bsp
 
 def only_non_trivial_triangles(bsp):
-    condTri = map(lambda x: (('A' not in x)|('X' not in x))&(('J' not in x)|('S' not in x))&(('J' not in x)|('R' not in x)), bsp['triangle'])
+    condTri = list(map(lambda x: (('A' not in x)|('X' not in x))&(('J' not in x)|('S' not in x))&(('J' not in x)|('R' not in x)), bsp['triangle']))
     bsp = bsp[condTri]
     return bsp
 
@@ -281,24 +282,24 @@ def all_quadruples_polar_log(alist,polar):
 def only_trivial_quadrangles(quad, whichB='all'):
     
     if whichB =='AX':
-        condQuad= map(lambda x: ('AX' not in x)&('A' in ''.join(x))&('X' in ''.join(x)), quad.quadrangle)
+        condQuad= list(map(lambda x: ('AX' not in x)&('A' in ''.join(x))&('X' in ''.join(x)), quad.quadrangle))
     elif whichB =='JS':
-        condQuad= map(lambda x: ('JS' not in x)&('J' in ''.join(x))&('S' in ''.join(x)), quad.quadrangle)
+        condQuad= list(map(lambda x: ('JS' not in x)&('J' in ''.join(x))&('S' in ''.join(x)), quad.quadrangle))
     elif whichB =='JR':
-        condQuad= map(lambda x: ('JR' not in x)&('J' in ''.join(x))&('R' in ''.join(x)), quad.quadrangle)
+        condQuad= list(map(lambda x: ('JR' not in x)&('J' in ''.join(x))&('R' in ''.join(x)), quad.quadrangle))
     else:
-        condAX= map(lambda x: ('AX' not in x)&('A' in ''.join(x))&('X' in ''.join(x)), quad.quadrangle)
-        condJS= map(lambda x: ('JS' not in x)&('J' in ''.join(x))&('S' in ''.join(x)), quad.quadrangle)
-        condJR= map(lambda x: ('JR' not in x)&('J' in ''.join(x))&('R' in ''.join(x)), quad.quadrangle)
+        condAX= list(map(lambda x: ('AX' not in x)&('A' in ''.join(x))&('X' in ''.join(x)), quad.quadrangle))
+        condJS= list(map(lambda x: ('JS' not in x)&('J' in ''.join(x))&('S' in ''.join(x)), quad.quadrangle))
+        condJR= list(map(lambda x: ('JR' not in x)&('J' in ''.join(x))&('R' in ''.join(x)), quad.quadrangle))
         condQuad = np.asarray(condAX)+np.asarray(condJS)+np.asarray(condJR)
     quad = quad[condQuad]
     return quad
 
 def only_nontrivial_quadrangles(quad):
     
-    condAX= map(lambda x: ('AX' in x)|('A' not in ''.join(x))|('X' not in ''.join(x)), quad.quadrangle)
-    condJS= map(lambda x: ('JS' in x)|('J' not in ''.join(x))|('S' not in ''.join(x)), quad.quadrangle)
-    condJR= map(lambda x: ('JR' in x)|('J' not in ''.join(x))|('R' not in ''.join(x)), quad.quadrangle)
+    condAX= list(map(lambda x: ('AX' in x)|('A' not in ''.join(x))|('X' not in ''.join(x)), quad.quadrangle))
+    condJS= list(map(lambda x: ('JS' in x)|('J' not in ''.join(x))|('S' not in ''.join(x)), quad.quadrangle))
+    condJR= list(map(lambda x: ('JR' in x)|('J' not in ''.join(x))|('R' not in ''.join(x)), quad.quadrangle))
     condQuad = np.asarray(condAX)*np.asarray(condJS)*np.asarray(condJR)
     quad = quad[condQuad]
     return quad
@@ -352,7 +353,7 @@ def coh_average_bsp(AIPS, tcoh = 5.):
         AIPS = AIPS[['datetime','band','triangle','source','polarization','vis','sigmaCP','snr','scan_id','expt_no','circ_sigma']]
         AIPS = AIPS.groupby(('triangle','band','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif})
     else:
-        AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime'])
+        AIPS.loc[:,'round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime']))
         AIPS = AIPS[['datetime','band','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
         AIPS = AIPS.groupby(('triangle','band','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif })
     AIPS = AIPS.reset_index()
@@ -362,28 +363,33 @@ def coh_average_bsp(AIPS, tcoh = 5.):
     return AIPS
 
 def circular_mean(theta):
-    theta = np.asarray(theta)*np.pi/180.
-    C = np.mean(np.cos(theta))
-    S = np.mean(np.sin(theta))
-    mt = np.arctan2(S,C)*180./np.pi
-    return mt
+    theta = np.asarray(theta, dtype=np.float32)*np.pi/180.
+    theta = theta[theta==theta]
+    
+    if len(theta)==0:
+        return None
+    else:
+        C = np.mean(np.cos(theta))
+        S = np.mean(np.sin(theta))
+        mt = np.arctan2(S,C)*180./np.pi
+        return mt
 
 def circular_std(theta):
-    theta = np.asarray(theta)*np.pi/180.
+    theta = np.asarray(theta, dtype=np.float32)*np.pi/180.
     C = np.mean(np.cos(theta))
     S = np.mean(np.sin(theta))
     st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi
     return st
 
 def circular_std_of_mean(theta):
-    theta = np.asarray(theta)*np.pi/180.
+    theta = np.asarray(theta, dtype=np.float32)*np.pi/180.
     C = np.mean(np.cos(theta))
     S = np.mean(np.sin(theta))
     st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi/np.sqrt(len(theta))
     return st
 
 def diff_side(x):
-    x = np.asarray(x)
+    x = np.asarray(x, dtype=np.float32)
     xp = x[1:]
     xm = x[:-1]
     xdif = xp-xm
@@ -393,7 +399,7 @@ def diff_side(x):
 
 
 def circular_std_of_mean_dif(theta):
-    theta = np.asarray(theta)*np.pi/180.
+    theta = np.asarray(theta, dtype=np.float32)*np.pi/180.
     #dif_theta = np.diff(theta)
     dif_theta = diff_side(theta)
     C = np.mean(np.cos(dif_theta))
@@ -402,11 +408,11 @@ def circular_std_of_mean_dif(theta):
     return st
 
 def std_dif(amp):
-    amp = np.diff(np.asarray(amp))
+    amp = np.diff(np.asarray(amp, dtype=np.float32))
     return np.std(amp)/np.sqrt(2)
 
 def unbiased_sigma(amp):
-    amp2 = np.asarray(amp)**2
+    amp2 = np.asarray(amp, dtype=np.float32)**2
     m = np.mean(amp2)
     s = np.std(amp2)
     delta = m**2 - s**2
@@ -417,7 +423,7 @@ def unbiased_sigma(amp):
     return s0
 
 def unbiased_sigma_dif(amp):
-    amp2 = np.diff(np.asarray(amp)**2)
+    amp2 = np.diff(np.asarray(amp, dtype=np.float32)**2)
     m = np.mean(amp2)
     s = np.std(amp2)
     k = np.mean(amp2**4)
@@ -429,7 +435,7 @@ def unbiased_sigma_dif(amp):
     return s0
 
 def unbiased_amp(amp):
-    amp2 = np.asarray(amp)**2
+    amp2 = np.asarray(amp, dtype=np.float32)**2
     m = np.mean(amp2)
     s = np.std(amp2)
     delta = m**2 - s**2
@@ -440,7 +446,7 @@ def unbiased_amp(amp):
     return a0
 
 def unbiased_amp2(amp):
-    amp = np.asarray(amp)
+    amp = np.asarray(amp, dtype=np.float32)
     m = np.mean(amp); q = np.mean(amp**2)
     eq_for_sig = lambda x: x*np.sqrt(np.pi/2.)*ss.hyp1f1(-0.5, 1., 1. - q/2./x**2) - m
     try:
@@ -454,7 +460,7 @@ def unbiased_amp2(amp):
         EA0 = 0.
     return EA0
 
-def unbiased_sigma2(amp):
+def unbiased_sigma2(amp, dtype=np.float32):
     amp = np.asarray(amp)
     m = np.mean(amp); q = np.mean(amp**2)
     eq_for_sig = lambda x: x*np.sqrt(np.pi/2.)*ss.hyp1f1(-0.5, 1., 1. - q/2./x**2) - m
@@ -465,8 +471,8 @@ def unbiased_sigma2(amp):
     return Esig
 
 def phase_diff(v1,v2):
-    v2 = np.asarray(np.mod(v2,360) )
-    v1 = np.asarray(np.mod(v1,360) )
+    v2 = np.asarray(np.mod(v2,360), dtype=np.float32)
+    v1 = np.asarray(np.mod(v1,360), dtype=np.float32)
     v2b = v2 + 360
     v2c = v2 - 360
     e1 = np.abs(v1 - v2)
@@ -488,8 +494,8 @@ def coh_average_vis(AIPS, tcoh = 5.,phaseType='resid_phas'):
     if 'band' not in AIPS.columns:
         AIPS.loc[:,'band'] = ['unknown']*np.shape(AIPS)[0]
 
-    AIPS['track'] = map(lambda x: a2a.expt2track[x],AIPS['expt_no'])
-    AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
+    AIPS['track'] = list(map(lambda x: a2a.expt2track[x],AIPS['expt_no']))
+    AIPS['round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime']))
     AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS[phaseType]*np.pi/180)
     if 'snr' in AIPS.columns:
         AIPS = AIPS[['datetime','band','baseline','source','polarization','vis','snr','std','sigma','track','expt_no','scan_no_tot','round_time']]
@@ -517,8 +523,8 @@ def coh_average_vis_uv(AIPS, tcoh = 5.,phaseType='resid_phas'):
     if 'std' not in AIPS.columns:
         AIPS.loc[:,'std'] = AIPS.loc[:,'sigma']
 
-    AIPS['track'] = map(lambda x: a2a.expt2track[x],AIPS['expt_no'])
-    AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
+    AIPS['track'] = list(map(lambda x: a2a.expt2track[x],AIPS['expt_no']))
+    AIPS['round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime']))
     AIPS['vis'] = AIPS['vis'] = AIPS['amp']*np.exp(1j*AIPS[phaseType]*np.pi/180)
     if 'snr' in AIPS.columns:
         AIPS = AIPS[['datetime','baseline','source','polarization','vis','snr','std','sigma','track','expt_no','scan_no_tot','round_time','u','v']]
@@ -555,7 +561,7 @@ def incoh_average_amp(AIPS, tinc = 'scan',scale_amp=1.):
             AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','scan_id','expt_no','sigma','sigmaB']]
             AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 'sigmaB': lambda x: np.std(x)/np.sqrt(len(x)), 'sigma': lambda x: unbiased_sigma(x)/np.sqrt(len(x)) })
     else:
-        AIPS.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tinc),AIPS.loc[:,'datetime'])
+        AIPS.loc[:,'round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tinc),AIPS.loc[:,'datetime']))
         if 'snr' in AIPS.columns:
             AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','snr','sigma','sigmaB','scan_id','expt_no','round_time']]
             AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 
@@ -619,11 +625,11 @@ def incoh_average_amp_uv(AIPS, tinc = 'scan',scale_amp=1.):
     return AIPS.reset_index()
 
 def add_round_time(frame, dt = 20.):
-    frame.loc[:,'round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame['datetime'])
+    frame.loc[:,'round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame['datetime']))
     return frame
 
 def add_polar_frac(frame, dt = 20.):
-    frame = frame[map(lambda x: x[0]!=x[1], frame.baseline)]
+    frame = frame[list(map(lambda x: x[0]!=x[1], frame.baseline))]
     frame = add_round_time(frame, dt)
     frame.loc[:,'polar_frac'] = [0.]*np.shape(frame)[0]
     frameG = frame.groupby(('baseline','round_time')).filter(lambda x: len(x) >1)
@@ -679,34 +685,34 @@ def match_2_dataframes(frame1, frame2, what_is_same=None):
         S1 = set(frame1.datetime)
         S2 = set(frame2.datetime)
         Sprod = S1&S2
-        cond1 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
-        cond2 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
+        cond1 = list(map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same])))
+        cond2 = list(map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same])))
     else: 
         S1 = set(zip(frame1.datetime,frame1[what_is_same]))
         S2 = set(zip(frame2.datetime,frame2[what_is_same]))
         Sprod = S1&S2
-        cond1 = map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same]))
-        cond2 = map(lambda x: x in Sprod, zip(frame2.datetime,frame2[what_is_same]))
+        cond1 = list(map(lambda x: x in Sprod, zip(frame1.datetime,frame1[what_is_same])))
+        cond2 = list(map(lambda x: x in Sprod, zip(frame2.datetime,frame2[what_is_same])))
     frame1 = frame1[cond1]
     frame2 = frame2[cond2]
     return frame1, frame2
 
 def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
 #what_is_same, e.g., triangle, then for given datetime matches only same triangles
-    frame1['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame1['datetime'])
-    frame2['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame2['datetime'])    
+    frame1['round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame1['datetime']))
+    frame2['round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/dt),frame2['datetime']))
     if what_is_same==None:
         S1 = set(frame1.round_time)
         S2 = set(frame2.round_time)
         Sprod = S1&S2
-        cond1 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
-        cond2 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
+        cond1 = list(map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same])))
+        cond2 = list(map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same])))
     else: 
         S1 = set(zip(frame1.round_time,frame1[what_is_same]))
         S2 = set(zip(frame2.round_time,frame2[what_is_same]))
         Sprod = S1&S2
-        cond1 = map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same]))
-        cond2 = map(lambda x: x in Sprod, zip(frame2.round_time,frame2[what_is_same]))
+        cond1 = list(map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same])))
+        cond2 = list(map(lambda x: x in Sprod, zip(frame2.round_time,frame2[what_is_same])))
     frame1 = frame1[cond1]
     frame2 = frame2[cond2]
     return frame1, frame2
@@ -1285,11 +1291,11 @@ def PrintSummaryQuad(alist):
     n3 = len(qaf.loc[(qaf['sigma']<sigmaLim)&(np.abs(qaf['amp'] - 1. )<3.*qaf['sigma']),'sigma'])
     n4 = len(qaf.loc[(np.abs(qaf['amp'] - 1. )<0.1)&(np.abs(qaf['amp'] - 1. )>=3.*qaf['sigma']),'sigma'])
     n5 = len(qaf.loc[(qaf['sigma']>=sigmaLim)&(np.abs(qaf['amp'] - 1. )<3.*qaf['sigma']),'sigma'])
-    print 'Total scans: ', n1 
-    print 'Scans with sigma <', sigmaLim,': ', n2
-    print 'Scans with sigma <', sigmaLim,', consistent with 4AMP==1 within 3 sigma: ', n3
-    print 'Scans inconsistent with 4AMP==1 within 3 sigma, but error smaller than 0.1: ', n4
-    print 'Scans consistent with 4AMP==1 within 3 sigma, but sigma > ', sigmaLim,': ', n5
+    print('Total scans: ', n1)
+    print('Scans with sigma <', sigmaLim,': ', n2)
+    print('Scans with sigma <', sigmaLim,', consistent with 4AMP==1 within 3 sigma: ', n3)
+    print('Scans inconsistent with 4AMP==1 within 3 sigma, but error smaller than 0.1: ', n4)
+    print('Scans consistent with 4AMP==1 within 3 sigma, but sigma > ', sigmaLim,': ', n5)
 
 
 def PrintSummaryTri(alist):
@@ -1301,11 +1307,11 @@ def PrintSummaryTri(alist):
     n3 = len(qaf.loc[(qaf['sigmaCP']<sigmaLim)&(np.abs(qaf['cphase'] - 0. )<3.*qaf['sigmaCP']),'sigmaCP'])
     n4 = len(qaf.loc[(np.abs(qaf['cphase'] - 0.)< 1.5)&(np.abs(qaf['cphase'] - 0. )>=3.*qaf['sigmaCP']),'sigmaCP'])
     n5 = len(qaf.loc[(qaf['sigmaCP']>=sigmaLim)&(np.abs(qaf['cphase'] - 0. )<3.*qaf['sigmaCP']),'sigmaCP'])
-    print 'Total scans: ', n1 
-    print 'Scans with sigma <', sigmaLim,'deg: ', n2
-    print 'Scans with sigma <', sigmaLim,'deg, consistent with CP==0 within 3 sigma: ', n3
-    print 'Scans inconsistent with CP==0 within 3 sigma, but error smaller than 1.5 deg: ', n4
-    print 'Scans consistent with CP==0 within 3 sigma, but sigma > ', sigmaLim,'deg: ', n5
+    print('Total scans: ', n1)
+    print('Scans with sigma <', sigmaLim,'deg: ', n2)
+    print('Scans with sigma <', sigmaLim,'deg, consistent with CP==0 within 3 sigma: ', n3)
+    print('Scans inconsistent with CP==0 within 3 sigma, but error smaller than 1.5 deg: ', n4)
+    print('Scans consistent with CP==0 within 3 sigma, but sigma > ', sigmaLim,'deg: ', n5)
 
 
 def DataTriangle3(alist,Tri,signat,pol):

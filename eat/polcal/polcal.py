@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 #import sys
 #sys.path.append('/Users/mwielgus/Works/MyEAT/eat/')
 from eat.inspect import closures as cl
@@ -100,19 +101,19 @@ def compute_elev(ra_source, dec_source, xyz_antenna, time):
 def paralactic_angle(alist):
     from astropy.time import Time
     get_GST_rad = lambda x: Time(x).sidereal_time('mean','greenwich').hour*2.*np.pi/24.
-    GST = np.asarray(map(get_GST_rad,alist.datetime)) #in radians
+    GST = np.asarray(list(map(get_GST_rad,alist.datetime))) #in radians
     station1 = [x[0] for x in alist.baseline]
     station2 = [x[1] for x in alist.baseline]
     #print(set(station1))
     #print(set(station2))
-    lon1 = np.asarray(map(lambda x: lon_dict[x],station1))*np.pi*2./360. #converted from deg to radians
-    lat1 = np.asarray(map(lambda x: lat_dict[x],station1))*np.pi*2./360. #converted from deg to radians
-    lon2 = np.asarray(map(lambda x: lon_dict[x],station2))*np.pi*2./360. #converted from deg to radians
-    lat2 = np.asarray(map(lambda x: lat_dict[x],station2))*np.pi*2./360. #converted from deg to radians
+    lon1 = np.asarray(list(map(lambda x: lon_dict[x],station1)))*np.pi*2./360. #converted from deg to radians
+    lat1 = np.asarray(list(map(lambda x: lat_dict[x],station1)))*np.pi*2./360. #converted from deg to radians
+    lon2 = np.asarray(list(map(lambda x: lon_dict[x],station2)))*np.pi*2./360. #converted from deg to radians
+    lat2 = np.asarray(list(map(lambda x: lat_dict[x],station2)))*np.pi*2./360. #converted from deg to radians
     #ras = np.asarray(alist.ra_hrs)*np.pi*2./24. #converted from hours to radians
     #dec = np.asarray(alist.dec_deg)*np.pi*2./360. #converted from deg to radians    
-    ras = np.asarray(map(lambda x: ras_dict[x], alist.source))*np.pi*2./24. #converted from hours to radians
-    dec = np.asarray(map(lambda x: dec_dict[x], alist.source))*np.pi*2./360. #converted from deg to radians
+    ras = np.asarray(list(map(lambda x: ras_dict[x], alist.source)))*np.pi*2./24. #converted from hours to radians
+    dec = np.asarray(list(map(lambda x: dec_dict[x], alist.source)))*np.pi*2./360. #converted from deg to radians
     HA1 = GST - lon1 - ras #in rad
     HA2 = GST - lon2 - ras #in rad
     par1I = np.sin(HA1)
@@ -121,8 +122,8 @@ def paralactic_angle(alist):
     par2I = np.sin(HA2)
     par2R = np.cos(dec)*np.tan(lat2) - np.sin(dec)*np.cos(HA2)
     par2 = np.angle(par2R + 1j*par2I )
-    alist['par1'] = par1
-    alist['par2'] = par2
+    alist.loc[:,'par1'] = par1
+    alist.loc[:,'par2'] = par2
 
     return alist
 
@@ -149,8 +150,8 @@ def add_computed_elev(alist):
     elev_data1 = zip(alist.source,station1,alist.datetime)
     elev_data2 = zip(alist.source,station2,alist.datetime)
     prep_elev = lambda x: compute_elev(ras_dict[x[0]],dec_dict[x[0]],ant_locat[x[1]],str(x[2]))
-    ref_elev = map(prep_elev,elev_data1)
-    rem_elev = map(prep_elev,elev_data2)
+    ref_elev = list(map(prep_elev,elev_data1))
+    rem_elev = list(map(prep_elev,elev_data2))
     alist_out = alist
     alist_out.loc[:,'ref_elev'] = ref_elev
     alist_out.loc[:,'rem_elev'] = rem_elev
@@ -164,8 +165,8 @@ def add_field_rotation(alist):
     fra_data1 = zip(alist.par1*180./np.pi,alist.ref_elev,station1)
     fra_data2 = zip(alist.par2*180./np.pi,alist.rem_elev,station2)
     
-    fra1 = map(field_rotation,fra_data1)
-    fra2 = map(field_rotation,fra_data2)
+    fra1 = list(map(field_rotation,fra_data1))
+    fra2 = list(map(field_rotation,fra_data2))
 
     alist.loc[:,'fra1'] = fra1
     alist.loc[:,'fra2'] = fra2
@@ -190,6 +191,8 @@ def solve_amp_ratio(alist,no_sigmas=4,weightsA=True, weightsP=True):
     fooR, fooL = cl.match_2_bsp_frames(alist,alist,match_what='polarization',dt = 0.5,what_is_same='baseline')
     fooR = fooR.sort_values(['datetime','baseline'])
     fooL = fooL.sort_values(['datetime','baseline'])
+    #print(np.shape(fooL))
+    #print(np.shape(fooR))
     #solving for amplitudes of RR to LL ratios
     #prepare mean values of ratios amplitudes
     amp_ratio = []
@@ -216,7 +219,7 @@ def solve_amp_ratio(alist,no_sigmas=4,weightsA=True, weightsP=True):
             bs = list_baselines[couB]
             if st in bs:
                 amp_matrix[couB,couS] = 1.*amp_weights[couB]
-
+    #print(amp_matrix)
     amp_ratio_st =  (np.linalg.lstsq(amp_matrix,np.transpose(amp_weights*np.log(np.asarray(amp_ratio))))[0])
     approx_res = np.exp(np.multiply(amp_matrix,amp_ratio_st))
     amp_ratio_st = np.exp(amp_ratio_st)
@@ -275,8 +278,112 @@ def solve_amp_ratio(alist,no_sigmas=4,weightsA=True, weightsP=True):
     #print(list_baselines)
     #print('Now phas_diff at the end:')
     #print(phas_diff)
-    return amp_ratio_st, phas_ratio_st, list_stations
+    return amp_ratio_st, np.mod(phas_ratio_st,360), list_stations
+
+
+def solve_ratios_scans(alist, recompute_elev=False,remove_phas_dof=False, zero_station=''):
+
+    src_sc_list = list(set(zip(alist.source,alist.scan_id)))
+    sc_list = [x for x in src_sc_list]
+    scan_id_list = [x[1] for x in sc_list]
+    list_stations_tot = list(set(''.join(list(set(alist.baseline)))))
+    foo_columns = sorted(list(map(lambda x: x+'_amp',list_stations_tot))+list(map(lambda x: x+'_phas',list_stations_tot)))
+    columns = ['datetime','source','scan_id']+foo_columns
+    ratios = pd.DataFrame(columns=columns)
+    for cou in range(len(sc_list)):
+        local_scan_id = sc_list[cou][1] 
+        local_source = sc_list[cou][0] 
+        print(local_scan_id,' ',local_source)
+        fooHloc = alist[alist.scan_id==local_scan_id]
+        fooHloc = add_total_field_rotation(fooHloc, recompute_elev=recompute_elev)
+        amp, pha, list_stations_loc = solve_amp_ratio(fooHloc,weightsA=True,weightsP=True)
         
+        print(list_stations_loc)
+        print(amp)
+        print(pha)
+        print('\n')
+        Ratios_loc = pd.DataFrame(columns=columns)
+        Ratios_loc['scan_id'] = [local_scan_id]
+        Ratios_loc['source'] = [local_source]
+        Ratios_loc['datetime'] = [min(fooHloc.datetime)]
+        for cou_st in range(len(list_stations_loc)):
+            stat = list_stations_loc[cou_st]
+            Ratios_loc[stat+'_amp'] = amp[cou_st]
+            Ratios_loc[stat+'_phas'] = pha[cou_st]
+        ratios = pd.concat([ratios,Ratios_loc],ignore_index=True)
+
+    if remove_phase_dof==True:
+        ratios = remove_phase_dof(ratios,zero_station)
+
+    return ratios
+
+
+
+def remove_phase_dof(ratios,zero_phase_station=''):
+    '''
+    Phase calculation with solve_amp_ratio keeps a degree of freedom i.e.
+    if ALL phases are shifted by any phi_0, results remain the same.
+    This function just assumes that phase at one chosen station is zero, subtracting
+    estimated phase at this station from all stations present in this scan
+    '''
+
+    ratios_fixed = ratios.copy()
+    phas_list = ratios.columns[list(map(lambda x:'phas' in x, ratios.columns))]
+    
+    #if zero phase station unspecified, choose the one with best coverage
+    #that is not ALMA
+    if zero_phase_station=='':
+        phas_list_noA = phas_list.drop('A_phas')
+        zero_phase_station = ratios_fixed[phas_list_noA].isnull().sum().argmin()[0]
+
+
+    #when zero station is active, subtract its phase from all ratios
+    phase_on_zero_station = np.asarray(ratios_fixed[zero_phase_station+'_phas'].copy())
+    phase_on_zero_station[phase_on_zero_station!=phase_on_zero_station]=0
+
+    for station in phas_list:
+        ratios_fixed.loc[:,station] = np.mod(np.asarray(ratios_fixed.loc[:,station]) - phase_on_zero_station,360)
+    
+    #when zero phase station isn't present, solve for value to subtract
+    phase_on_zero_station = np.asarray(ratios_fixed[zero_phase_station+'_phas'].copy())
+    #print(ratios_fixed.loc[phase_on_zero_station!=phase_on_zero_station,phas_list])
+    #print(ratios_fixed.loc[phase_on_zero_station==phase_on_zero_station,phas_list].mean())
+    
+    zps_present = ratios_fixed.loc[phase_on_zero_station==phase_on_zero_station,phas_list]
+    zps_not_present = ratios_fixed.loc[phase_on_zero_station!=phase_on_zero_station,phas_list]
+    #print(zps_present)
+    phas_list_noS = phas_list.drop('S_phas')
+    zps_present_mean_phases = zps_present.apply(cl.circular_mean)
+    zps_differences = zps_not_present-zps_present_mean_phases
+    #print(zps_differences)
+
+    error_m360 = lambda vect,x: np.sum(np.minimum(vect - x, 360 - (vect-x))**2)
+    #from scipy.optimize import minimize
+    for indexR, row in ratios_fixed.iterrows():
+        if indexR in zps_differences.index:
+            #print(indexR)
+            row = zps_differences[phas_list_noS][zps_differences.index==indexR]
+            rowLoc = np.asarray(row,dtype=np.float32)
+            rowLoc = rowLoc[rowLoc==rowLoc]
+            #print(rowLoc)
+
+            delta_phase_scan = cl.circular_mean(rowLoc)
+            #print(ratios_fixed.iloc[index])
+            #print(index)
+            #print()
+            foo = np.asarray(ratios_fixed.loc[(ratios_fixed.index==indexR),phas_list]) - delta_phase_scan 
+            #print(foo)
+            ratios_fixed.loc[(ratios_fixed.index==indexR),phas_list] = foo
+            #print(ratios_fixed.loc[(ratios_fixed.index==indexR),phas_list])
+            #print(ratios_fixed[(ratios_fixed.index==indexR)][phas_list])
+            #print(foo)
+            #ratios_fixed[phas_list].replace([(ratios_fixed.index==indexR)], foo, inplace=True)
+            #print(ratios_fixed[(ratios_fixed.index==indexR)][phas_list])
+    return ratios_fixed
+
+#def minimize_with_one_subtraction(vect):
+
+
 
 def cut_outliers(vector,no_sigmas):
     #cuts outliers that are in distance from mean value larger than no_sigmas

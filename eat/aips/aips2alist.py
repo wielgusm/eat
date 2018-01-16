@@ -6,7 +6,8 @@ Maciek Wielgus, maciek.wielgus@gmail.com
 '''
 
 import pandas as pd
-import time, datetime, os, vex, uvdata, glob
+import time, datetime, os, glob
+from eat.aips import vex, uvdata
 import numpy as np
 import numpy.random as npr
 import sys
