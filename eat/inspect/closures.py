@@ -161,18 +161,20 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         condB3 = (alist['baseline']==Tri[2])
         condB = condB1|condB2|condB3
         alist_Tri = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline',phaseType,'amp','snr','gmst','band']]
-        
+        #print(alist_Tri)
         #print(np.shape(alist_Tri))
         #throw away times without full triangle
         tlist = alist_Tri.groupby('datetime').filter(lambda x: len(x) > 2)
         tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
-
+        #print(tlist.loc[:,phaseType])
         for cou2 in range(3):
             tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phaseType] *= signat[cou2]*np.pi/180.
         tlist.loc[:,'sigma'] = 1./tlist.loc[:,'snr']**2 #put 1/snr**2 in the sigma column to aggregate
+        
         bsp = tlist.groupby(('expt_no','source','band','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
         #sigma above is the CLOSURE PHASE ERROR
         #print(bsp.columns)
+        
         bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
         bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
         bsp.loc[:,'sigma'] = bsp.loc[:,'amp']*bsp.loc[:,'sigma'] #sigma of bispectrum
@@ -718,7 +720,6 @@ def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
     return frame1, frame2
 
 def match_2_bsp_frames(frame1,frame2,match_what='pipeline',dt = 15.,what_is_same='triangle'):
-
     
     frame1_lo_ll = frame1[(frame1.band=='lo')&(frame1.polarization=='LL')].reset_index(drop='True')
     frame1_hi_ll = frame1[(frame1.band=='hi')&(frame1.polarization=='LL')].reset_index(drop='True')
@@ -741,6 +742,7 @@ def match_2_bsp_frames(frame1,frame2,match_what='pipeline',dt = 15.,what_is_same
         frame2 = pd.concat([frame2_lo_ll,frame2_hi_ll,frame2_lo_rr,frame2_hi_rr], ignore_index=True)
 
     elif match_what=='polarization':
+        #print('dududdududu')
         #match ll polarization from the first frame to rr polarization in the second frame, keepieng band
         frame1_lo_ll, frame2_lo_rr = match_2_dataframes_approxT(frame1_lo_ll, frame2_lo_rr, what_is_same, dt)
         frame1_hi_ll, frame2_hi_rr = match_2_dataframes_approxT(frame1_hi_ll, frame2_hi_rr, what_is_same, dt)

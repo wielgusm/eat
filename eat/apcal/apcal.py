@@ -32,7 +32,9 @@ import matplotlib.pyplot as plt
 from astropy import units as u
 from astropy.coordinates import EarthLocation, AltAz, ICRS, Angle
 from astropy.time import Time, TimeDelta
-import vex as vex
+#import vex as vex
+from eat.aips import vex
+import scipy.interpolate as si
 
 AZ2Z = {'AZ': 'Z', 'PV': 'P', 'SM':'S', 'SR':'R','JC':'J', 'AA':'A','AP':'X', 'LM':'L'}
 SMT2Z = {'APEX': 'X', 'JCMT': 'J', 'LMT':'L', 'SMR':'R', 'SMA':'S', 'SMT':'Z', 'PV':'P'}
@@ -353,8 +355,8 @@ def generate_and_save_sefd_data(Tsys_full, dict_dpfu, dict_gfit, sourL=sourL, an
         os.makedirs(dirLO)
 
     for expt in exptL:
-        dir_expt_HI = dirHI+'/'+str(expt)
-        dir_expt_LO = dirLO+'/'+str(expt)
+        dir_expt_HI = dirHI+'/'+str(int(expt))
+        dir_expt_LO = dirLO+'/'+str(int(expt))
         if not os.path.exists(dir_expt_HI):
             os.makedirs(dir_expt_HI)
         if not os.path.exists(dir_expt_LO):
@@ -511,7 +513,7 @@ def make_scan_list(fpath,dict_gfit):
 def match_scans_Tsys(scans,Tsys):
     
     bins_labels = [None]*(2*scans.shape[0]-1)
-    bins_labels[1::2] = map(lambda x: -x-1,list(scans['scan_no_tot'])[:-1])
+    bins_labels[1::2] = list(map(lambda x: -x-1,list(scans['scan_no_tot'])[:-1]))
     bins_labels[::2] = list(scans['scan_no_tot'])
     dtmin = datetime.timedelta(seconds = 0.) 
     dtmax = datetime.timedelta(seconds = 0.) 
@@ -524,10 +526,11 @@ def match_scans_Tsys(scans,Tsys):
     DictGainP = dict(zip(list(scans.scan_no_tot), list(scans.gainP)))
     DictGainZ = dict(zip(list(scans.scan_no_tot), list(scans.gainZ)))
     Tsys['scan_no_tot'] = ordered_labels
-    Tsys = Tsys[map(lambda x: x >= 0, Tsys['scan_no_tot'])]
-    Tsys.loc[:,'source'] = map(lambda x: DictSource[x], Tsys['scan_no_tot'])
-    Tsys.loc[:,'gainP'] = map(lambda x: DictGainP[x], Tsys['scan_no_tot'])
-    Tsys.loc[:,'gainZ'] = map(lambda x: DictGainZ[x], Tsys['scan_no_tot'])
+    #print(ordered_labels)
+    Tsys = Tsys[list(map(lambda x: x >= 0, Tsys['scan_no_tot']))]
+    Tsys.loc[:,'source'] = list(map(lambda x: DictSource[x], Tsys['scan_no_tot']))
+    Tsys.loc[:,'gainP'] = list(map(lambda x: DictGainP[x], Tsys['scan_no_tot']))
+    Tsys.loc[:,'gainZ'] = list(map(lambda x: DictGainZ[x], Tsys['scan_no_tot']))
     Tsys = Tsys.sort_values('datetime').reset_index(drop=True)
     
     return Tsys
@@ -570,4 +573,113 @@ def get_sefds(antab_path ='ANTABS/', vex_path = 'VexFiles/', sourL=sourL,antL=an
     #produce a priori calibration data
     generate_and_save_sefd_data(Tsys_match, dict_dpfu, dict_gfit, sourL, antL, exptL)
 
+
+def modify_Tsys_match(Tsys_match,dict_dpfu):
+    Tsys_match['dpfu'] = list(map(lambda x: dict_dpfu[x],list(zip(Tsys_match['antena'],Tsys_match['track']))))
+    Tsys_P = Tsys_match[Tsys_match.antena=='P']
+    Tsys_Z = Tsys_match[Tsys_match.antena=='Z']
+    Tsys_rest = Tsys_match[list(map(lambda x: x not in ['P', 'Z'],Tsys_match.antena))]
+    Tsys_P.loc[:,'gain'] = Tsys_P['gainP']
+    Tsys_Z.loc[:,'gain'] = Tsys_Z['gainZ']
+    Tsys_rest.loc[:,'gain'] = [1.]*np.shape(Tsys_rest)[0]
+    Tsys = pd.concat([Tsys_P,Tsys_Z,Tsys_rest],ignore_index=True)
+    Tsys['sefd_L_lo'] = Tsys['Tsys_st_L_lo']/Tsys['gain']/Tsys['dpfu']
+    Tsys['sefd_R_lo'] = Tsys['Tsys_st_R_lo']/Tsys['gain']/Tsys['dpfu']
+    Tsys['sefd_L_hi'] = Tsys['Tsys_st_L_hi']/Tsys['gain']/Tsys['dpfu']
+    Tsys['sefd_R_hi'] = Tsys['Tsys_st_R_hi']/Tsys['gain']/Tsys['dpfu']
+    SEFD = Tsys[['datetime','antena','expt_no','source','mjd','scan_no_tot','sefd_L_lo','sefd_R_lo','sefd_L_hi','sefd_R_hi']].copy()
+    SEFD.sort_values(['datetime','antena'], inplace=True)
+    SEFD.reset_index(inplace=True)
+    return SEFD
+
+
+def apply_sefds(alist,SEFDfits):
+
+    alist['mjd'] = Time(list(alist.datetime)).mjd
+    list_expt = list(alist.expt_no.unique())
+    list_source = list(alist.source.unique())
+    list_baseline = list(alist.baseline.unique())
+    list_polarization = list(alist.polarization.unique())
+    list_band = list(alist.band.unique())
+
+    columns=list(alist.columns)
+    alist_sefd = pd.DataFrame(columns=columns)
+    for expt in list_expt:
+        for sour in list_source:
+            for base in list_baseline:
+                for band in list_band:
+                    for polar in list_polarization:
+
+                        alist_loc = alist[(alist.expt_no==expt)&(alist.source==sour)&(alist.baseline==base)&(alist.band==band)&(alist.polarization==polar)]
+                        time_mjd = np.asarray(alist_loc.mjd)
+                        try:
+                            alist_loc['sefd_cal'] = np.sqrt(SEFDfits[(expt,sour,base[0],polar[0],band)](time_mjd)*SEFDfits[(expt,sour,base[1],polar[1],band)](time_mjd))
+                            alist_sefd = pd.concat([alist_sefd,alist_loc],ignore_index=True)
+                        except KeyError:
+                            continue
+            print(expt, sour)                
+    return alist_sefd
+
+
+def apply_sefds_trans(alist,SEFDfits):
+
+    alist['mjd'] = Time(list(alist.datetime)).mjd
+    alist['sefd'] = list(zip(alist['expt_no'],alist['source'],alist['baseline'],alist['polarization'],alist['band'],alist['mjd']))
+    
+    def get_sefd(x):
+        try:
+            answ = np.sqrt(SEFDfits[(x[0],x[1],x[2][0],x[3][0],x[4])](x[5])*SEFDfits[(x[0],x[1],x[2][1],x[3][1],x[4])](x[5]))   
+        except KeyError:
+            answ = None
+        return answ
+
+    foo = alist['sefd'].transform(get_sefd)       
+    alist['sefd']= foo
+    alist['amp_no_ap'] = alist['amp']
+    alist['amp_ap'] = alist['amp_no_ap']*alist['sefd']/10000
+    alist.drop('amp',axis=1,inplace=True)
+    alist.rename(index=str, columns={"amp_ap": "amp"},inplace=True)
+
+    if 'sigma' in alist.columns:
+        alist['sigma_no_ap'] = alist['sigma']
+        alist['sigma_ap'] = alist['sigma']*alist['sefd']/10000
+    else:
+        alist['sigma'] = alist['amp_no_ap']/alist['snr']
+        alist['sigma_no_ap'] = alist['amp_no_ap']/alist['snr']
+        alist['sigma_ap'] = (alist['amp_no_ap']/alist['snr'])*alist['sefd']/10000
+    
+    alist.drop('sigma',axis=1,inplace=True)
+    alist.rename(index=str, columns={"sigma_ap": "sigma"},inplace=True)
+    
+    return alist  
+
+def dict_sefd_fits(SEFD,kind='nearest'):
+    dict_sefd_fits = {}
+    list_expt = list(SEFD.expt_no.unique())
+    list_source = list(SEFD.source.unique())
+    list_antena = list(SEFD.antena.unique())
+    for expt in list_expt:
+        for sour in list_source:
+            for ant in list_antena:
+                try:
+                    SEFD_loc = SEFD[(SEFD.expt_no==expt)&(SEFD.source==sour)&(SEFD.antena==ant)]
+            
+                    sefd_L_lo_fit = si.interp1d(SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_L_lo))].mjd,SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_L_lo))].sefd_L_lo,kind=kind,fill_value='extrapolate')
+                    sefd_L_hi_fit = si.interp1d(SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_L_hi))].mjd,SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_L_hi))].sefd_L_hi,kind=kind,fill_value='extrapolate')
+                    sefd_R_lo_fit = si.interp1d(SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_R_lo))].mjd,SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_R_lo))].sefd_R_lo,kind=kind,fill_value='extrapolate')
+                    sefd_R_hi_fit = si.interp1d(SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_R_hi))].mjd,SEFD_loc[list(map(lambda x: x==x,SEFD_loc.sefd_R_hi))].sefd_R_hi,kind=kind,fill_value='extrapolate')
+
+                    dict_sefd_fits[(expt,sour,ant,'L','lo')] = sefd_L_lo_fit
+                    dict_sefd_fits[(expt,sour,ant,'L','hi')] = sefd_L_hi_fit
+                    dict_sefd_fits[(expt,sour,ant,'R','lo')] = sefd_R_lo_fit
+                    dict_sefd_fits[(expt,sour,ant,'R','hi')] = sefd_R_hi_fit
+                except (ValueError,AttributeError):
+                    #attribute error happens when zero length vector is passed
+                    continue
+    return dict_sefd_fits
+
+              
+def add_mjd(alist):
+    alist['mjd'] = Time(list(alist.datetime)).mjd
+    return alist
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import itertools
-from closures import *
+from eat.inspect.closures import *
 
 def polar_CP_error_hi_lo(bisp_rr_hi, bisp_ll_hi, bisp_rr_lo, bisp_ll_lo):
     #consistency in polarizations, separately for hi and lo

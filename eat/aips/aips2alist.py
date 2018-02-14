@@ -176,10 +176,10 @@ def make_scan_list(fpath):
 def add_datetime(AIPS):
     ddV= []
     for cou in range(AIPS.shape[0]):
-        h = AIPS['hour'][cou]
-        m = AIPS['min'][cou]
-        s = AIPS['sec'][cou]
-        doy = AIPS['doy'][cou]
+        h = int(AIPS['hour'][cou])
+        m = int(AIPS['min'][cou])
+        s = int(AIPS['sec'][cou])
+        doy = int(AIPS['doy'][cou])
         ddV.append(datetime.datetime(2017, 1,1,h,m,s) + datetime.timedelta(days=doy-1))
     AIPS['datetime'] = ddV
     return AIPS
