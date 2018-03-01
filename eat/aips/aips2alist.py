@@ -359,9 +359,9 @@ def bootstrap(data, num_samples, statistic, alpha=0.05):
     idx = npr.randint(0, n, (num_samples, n))
     samples = data[idx]
     stat = np.sort(statistic(samples, 1))
-    #return (stat[int((alpha/2.0)*num_samples)],
-    #        stat[int((1-alpha/2.0)*num_samples)])
-    return stat[int(num_samples/2.)]
+    return (np.median(stat),stat[int((alpha/2.0)*num_samples)],
+            stat[int((1-alpha/2.0)*num_samples)])
+    #return stat[int(num_samples/2.)]
 
 def bootstrap_std(data, num_samples=10000):
     data = np.asarray(data)

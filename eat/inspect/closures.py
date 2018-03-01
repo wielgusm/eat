@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from eat.io import hops, util
 from eat.hops import util as hu
 from eat.aips import aips2alist as a2a
+from eat.inspect import utils as ut
 
 hrs = [0,24.,48.]
 
@@ -140,6 +141,13 @@ def baselines2triangles(basel):
     tri = [''.join(sorted(list(set(''.join(x))))) for x in basel]
     return tri
 
+def all_bispectra(alist,phaseType='resid_phas'):
+    bsp_LL = all_bispectra_polar(alist,'LL',phaseType)
+    bsp_RR = all_bispectra_polar(alist,'RR',phaseType)
+    bsp = pd.concat([bsp_LL,bsp_RR],ignore_index=True)
+    return bsp
+
+
 def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
     alist = alist[alist['polarization']==polar]
     if 'scan_id' not in alist.columns:
@@ -164,7 +172,7 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         #print(alist_Tri)
         #print(np.shape(alist_Tri))
         #throw away times without full triangle
-        tlist = alist_Tri.groupby('datetime').filter(lambda x: len(x) > 2)
+        tlist = alist_Tri.groupby(('band','datetime')).filter(lambda x: len(x) > 2)
         tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
         #print(tlist.loc[:,phaseType])
         for cou2 in range(3):
@@ -174,6 +182,57 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         bsp = tlist.groupby(('expt_no','source','band','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
         #sigma above is the CLOSURE PHASE ERROR
         #print(bsp.columns)
+        
+        bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
+        bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
+        bsp.loc[:,'sigma'] = bsp.loc[:,'amp']*bsp.loc[:,'sigma'] #sigma of bispectrum
+        bsp.loc[:,'triangle'] = [triL[cou]]*np.shape(bsp)[0]
+        bsp.loc[:,'polarization'] = [polar]*np.shape(bsp)[0]
+        #bsp.loc[:,'signature'] = [signat]*np.shape(bsp)[0]
+        bsp.loc[:,'cphase'] = np.angle(bsp.loc[:,'bisp'])*180./np.pi
+        bsp.loc[:,'amp'] = np.abs(bsp.loc[:,'bisp'])
+        bsp.loc[:,'snr'] = bsp.loc[:,'amp']/bsp.loc[:,'sigma']
+        bsp.loc[:,'sigmaCP'] = 1./bsp.loc[:,'snr']*180./np.pi #deg
+        bsp_out = pd.concat([bsp_out, bsp])
+    bsp_out = bsp_out.reset_index()
+    #print(bsp_out.columns)
+    bsp_out = bsp_out[['datetime','source','triangle','polarization','cphase','sigmaCP','amp','sigma','snr','scan_id','expt_no','band']] 
+    
+    return bsp_out
+
+
+def all_bispectra_polar_scan_MC(alist,polar,phaseType='resid_phas'):
+    alist = alist[alist['polarization']==polar]
+    if 'scan_id' not in alist.columns:
+        alist.loc[:,'scan_id'] = alist.loc[:,'scan_no_tot']
+    if 'band' not in alist.columns:
+        alist.loc[:,'band'] = [None]*np.shape(alist)[0]
+
+    triL = list_all_triangles(alist)
+    tri_baseL, sgnL = triangles2baselines(triL,alist)
+    #this is done twice to remove some non-present triangles
+    triL = baselines2triangles(tri_baseL)
+    tri_baseL, sgnL = triangles2baselines(triL,alist)
+    bsp_out = pd.DataFrame({})
+    for cou in range(len(triL)):
+        Tri = tri_baseL[cou]
+        signat = sgnL[cou]
+        condB1 = (alist['baseline']==Tri[0])
+        condB2 = (alist['baseline']==Tri[1])
+        condB3 = (alist['baseline']==Tri[2])
+        condB = condB1|condB2|condB3
+        alist_Tri = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline',phaseType,'unbiased_amp','snr','gmst','band']]
+        
+        #throw away times without full triangle
+        tlist = alist_Tri.groupby(('band','datetime')).filter(lambda x: len(x) > 2)
+        tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
+
+        for cou2 in range(3):
+            tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phaseType] *= signat[cou2]*np.pi/180.
+        tlist.loc[:,'sigma'] = 1./tlist.loc[:,'snr']**2 #put 1/snr**2 in the sigma column to aggregate
+        
+        bsp = tlist.groupby(('expt_no','source','band','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
+        #sigma above is the CLOSURE PHASE ERROR
         
         bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
         bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
@@ -209,6 +268,13 @@ def only_non_trivial_triangles(bsp):
     bsp = bsp[condTri]
     return bsp
 
+def all_quadruples_log(alist):
+    quad_LL =all_quadruples_polar_log(alist,'LL')
+    quad_RR =all_quadruples_polar_log(alist,'RR')
+    quad = pd.concat([quad_LL,quad_RR],ignore_index=True)
+    return quad
+
+
 
 def all_quadruples_polar_log(alist,polar):
     alist = alist[alist['polarization']==polar]
@@ -232,7 +298,7 @@ def all_quadruples_polar_log(alist,polar):
         alist_Quad = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline','amp','snr','gmst','band']]
         print(Quad)
         #throw away times without full quadrangle
-        tlist = alist_Quad.groupby('datetime').filter(lambda x: len(x) > 3)
+        tlist = alist_Quad.groupby(('band','datetime')).filter(lambda x: len(x) > 3)
 
         ###MONTE CARLO VARIATION
         #foo = list(zip(tlist.loc[:,'snr'],tlist.loc[:,'amp']))
@@ -278,7 +344,7 @@ def all_quadruples_polar_log(alist,polar):
     quad_out = quad_out.reset_index()
     #print(quad_out)
     quad_out = quad_out[['datetime','band','source','quadrangle','polarization','logamp','sigma','scan_id','expt_no']] 
-    
+    quad['quadrangle'] = list(map(tuple,quad.quadrangle))
     return quad_out
 
 def only_trivial_quadrangles(quad, whichB='all'):
@@ -356,13 +422,14 @@ def coh_average_bsp(AIPS, tcoh = 5.):
         AIPS = AIPS.groupby(('triangle','band','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif})
     else:
         AIPS.loc[:,'round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS.loc[:,'datetime']))
-        AIPS = AIPS[['datetime','band','triangle','source','polarization','vis','sigma','scan_id','expt_no','round_time']]
+        AIPS = AIPS[['datetime','band','triangle','source','polarization','vis','sigma','sigmaCP','scan_id','expt_no','round_time','snr','circ_sigma']]
         AIPS = AIPS.groupby(('triangle','band','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'vis': np.mean, 'sigmaCP': lambda x: np.sqrt(np.sum(x**2))/len(x),'snr': lambda x: np.sqrt(np.sum(x**2)),'circ_sigma': circular_std_of_mean_dif })
     AIPS = AIPS.reset_index()
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
     AIPS = AIPS[['datetime','band','triangle','source','polarization','amp', 'cphase', 'sigmaCP','snr','expt_no','scan_id','circ_sigma']]
-    return AIPS
+    return 
+    
 
 def circular_mean(theta):
     theta = np.asarray(theta, dtype=np.float32)*np.pi/180.
@@ -572,13 +639,31 @@ def incoh_average_amp(AIPS, tinc = 'scan',scale_amp=1.):
             AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','sigma','sigmaB','scan_id','expt_no','round_time']]
             AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id','round_time')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 'sigmaB': lambda x: np.std(x)/np.sqrt(len(x)), 'sigma': lambda x: unbiased_sigma(x)/np.sqrt(len(x)) })
     
-    
     AIPS.loc[:,'amp'] = scale_amp*AIPS.loc[:,'amp']
     AIPS.loc[:,'ampB'] = scale_amp*AIPS.loc[:,'ampB']
     AIPS.loc[:,'sigmaB'] = scale_amp*AIPS.loc[:,'sigmaB']
     AIPS.loc[:,'sigma'] = scale_amp*AIPS.loc[:,'sigma']
     
     return AIPS.reset_index()
+
+def average_quad(quad, tinc = 'scan'):
+    
+    if 'scan_id' not in quad.columns:   
+        quad['scan_id'] = quad['scan_no_tot']
+    if 'band' not in quad.columns:
+        quad.loc[:,'band'] = ['unknown']*np.shape(quad)[0]
+        
+    if tinc == 'scan':
+
+        quad= quad[['datetime','quadrangle','source','polarization','logamp','scan_id','expt_no','sigma','band']]
+        AIPS = quad.groupby(('quadrangle','source','polarization','expt_no','scan_id','band')).agg({'datetime': 'min', 'logamp': np.mean, 
+        'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+    else:
+        quad.loc[:,'round_time'] = list(map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tinc),quad.loc[:,'datetime']))
+        quad = quad[['datetime','quadrangle','source','polarization','logamp','sigma','scan_id','expt_no','round_time','band']]
+        quad = quad.groupby(('quadrangle','source','polarization','expt_no','scan_id','band','round_time')).agg({'datetime': 'min', 'logamp': np.mean, 'sigma': lambda x: np.sqrt(np.sum(x**2))/len(x) })
+    
+    return quad.reset_index()
 
 
     #AIPS['round_time'] = map(lambda x: np.round((x- datetime.datetime(2017,4,4)).total_seconds()/tcoh),AIPS['datetime'])
@@ -707,8 +792,8 @@ def match_2_dataframes_approxT(frame1, frame2, what_is_same=None, dt = 5.):
         S1 = set(frame1.round_time)
         S2 = set(frame2.round_time)
         Sprod = S1&S2
-        cond1 = list(map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same])))
-        cond2 = list(map(lambda x: x in Sprod, zip(frame1.round_time,frame1[what_is_same])))
+        cond1 = list(map(lambda x: x in Sprod, frame1.round_time))
+        cond2 = list(map(lambda x: x in Sprod, frame2.round_time))
     else: 
         S1 = set(zip(frame1.round_time,frame1[what_is_same]))
         S2 = set(zip(frame2.round_time,frame2[what_is_same]))
@@ -1409,3 +1494,103 @@ def check_match(fooH,fooA):
     all(fooH['baseline']==fooA['baseline']),
     all(fooH['polarization']==fooA['polarization']),
     all(fooH['band']==fooA['band'])])
+
+
+def all_polar_line(alist):
+    '''
+    forms baseline-based closure quantity
+    (RL*)(LR*)/(RR*)(LL*)
+    '''
+    if 'scan_id' not in alist.columns:
+        alist.loc[:,'scan_id'] = alist.loc[:,'scan_no_tot']
+    if 'band' not in alist.columns:
+        alist.loc[:,'band'] = [None]*np.shape(alist)[0]
+
+    #select only scans/baselines with 4 polarized components
+    polrats =data.groupby(('datetime','scan_id','expt_no','baseline','band')).filter(lambda x: len(x)==4)
+
+
+    bands = list(polrats.band.unique())
+    expts = list(polrats.expt_no.unique())
+    baselines = list(polrats.baseline.unique())
+
+    for band in bands:
+        for expt in expts:
+            for baseline in baselines:
+                fooLR = polrats[polrats.polarization=='LR']
+                fooRL = polrats[polrats.polarization=='RL']
+                fooLL = polrats[polrats.polarization=='LL']
+                fooRR = polrats[polrats.polarization=='RR']
+
+
+
+    
+
+def all_cpol(alist,what_phase='resid_phas'):
+    alist.groupby(('band','datetime','baseline')).filter(lambda x: len(x) == 4)
+
+    cols = ['datetime','band','baseline']
+    vis_RR = alist[alist.polarization=='RR'].sort_values(['band','datetime','baseline'])['amp',what_phase]
+    vis_LL = alist[alist.polarization=='LL'].sort_values(['band','datetime','baseline'])['amp',what_phase]
+    vis_LR = alist[alist.polarization=='LR'].sort_values(['band','datetime','baseline'])['amp',what_phase]
+    vis_RL = alist[alist.polarization=='RL'].sort_values(['band','datetime','baseline'])['amp',what_phase]
+
+    data = alist[alist.polarization=='RR'].sort_values(['band','datetime','baseline'])
+    
+
+def save_cp(bsp,folder,sourL='all'):
+
+    if sourL!='all':
+        bsp = bsp[list(map(lambda x:  x in sourL,bsp.source))]
+    bsp = ut.add_mjd(bsp)
+
+    exptL = list(bsp.expt_no.unique())
+    for expt in exptL:
+        bspE = bsp[bsp.expt_no==expt]
+        bandL = list(bspE.band.unique())
+        for band in bandL:
+            bspEBa = bspE[bspE.band==band]
+            polarL = list(bspEBa.polarization.unique())
+            for polar in polarL:
+                bspEBaP = bspEBa[bspEBa.polarization==polar]
+                sourceL = list(bspEBaP.source.unique())
+                for source in sourceL:
+                    bspEBaPS = bspEBaP[bspEBaP.source==source]
+                    triangleL = list(bspEBaPS.triangle.unique())
+                    for triangle in triangleL:
+                        bspEBaPST = bspEBaPS[bspEBaPS.triangle==triangle]
+                        nameLoc = folder+source+'_'+triangle+'_'+str(expt)+'_'+polar+'_'+band+'.csv'
+                        foo = bspEBaPST[['mjd','cphase','sigmaCP']]
+                        foo.to_csv(nameLoc,header=False,index=False)
+
+
+
+def save_lca(quad,folder,sourL='all'):
+
+    if sourL!='all':
+        quad = quad[list(map(lambda x:  x in sourL,quad.source))]
+    quad = ut.add_mjd(quad)
+
+    exptL = list(quad.expt_no.unique())
+    for expt in exptL:
+        quadE = quad[quad.expt_no==expt]
+        bandL = list(quadE.band.unique())
+        for band in bandL:
+            quadEBa = quadE[quadE.band==band]
+            polarL = list(quadEBa.polarization.unique())
+            for polar in polarL:
+                quadEBaP = quadEBa[quadEBa.polarization==polar]
+                sourceL = list(quadEBaP.source.unique())
+                for source in sourceL:
+                    quadEBaPS = quadEBaP[quadEBaP.source==source]
+                    quadrangleL = list(quadEBaPS.quadrangle.unique())
+                    for quadr in quadrangleL:
+                        quadEBaPST = quadEBaPS[quadEBaPS.quadrangle==quadr]
+                        strquad = str(quadr[0])+'_'+str(quadr[1])+'_'+str(quadr[2])+'_'+str(quadr[3])
+                        nameLoc = folder+source+'_'+strquad+'_'+str(expt)+'_'+polar+'_'+band+'.csv'
+                        foo = quadEBaPST[['mjd','logamp','sigma']]
+                        foo.to_csv(nameLoc,header=False,index=False)
+                        
+
+    
+    

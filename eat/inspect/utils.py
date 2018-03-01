@@ -5,6 +5,7 @@ import scipy.optimize as so
 import scipy.stats as st 
 import pandas as pd
 import numpy as np
+import numpy.random as npr
 import matplotlib.pyplot as plt
 from eat.io import hops, util
 from eat.hops import util as hu
@@ -30,6 +31,43 @@ def circular_mean(theta):
         mt = np.arctan2(S,C)*180./np.pi
         return np.mod(mt,360)
 
+def unb_amp_no_trend(t_A): 
+    #t_A = list(zip(fooLoc.mjd,fooLoc.amp))
+    time = np.asarray([x[0] for x in t_A])
+    time = time - np.mean(time)
+    amp = np.asarray([x[1] for x in t_A])
+    #removing linear trend, but not the mean value
+    amp = amp-np.polyfit(time,amp,1)[0]*time
+    amp2 = np.asarray(amp, dtype=np.float32)**2
+    m = np.mean(amp2)
+    s = np.std(amp2)
+    delta = m**2 - s**2
+    if delta >=0:
+        a0 = delta**(0.25)
+        #s0 = np.sqrt((m -np.sqrt(delta))/2.)
+    else:
+        a0 = np.nan
+        #s0 = np.nan
+    return a0
+
+def unb_std_no_trend(t_A): 
+    #t_A = list(zip(fooLoc.mjd,fooLoc.amp))
+    time = np.asarray([x[0] for x in t_A])
+    time = time - np.mean(time)
+    amp = np.asarray([x[1] for x in t_A])
+    #removing linear trend, but not the mean value
+    amp = amp-np.polyfit(time,amp,1)[0]*time
+    amp2 = np.asarray(amp, dtype=np.float32)**2
+    m = np.mean(amp2)
+    s = np.std(amp2)
+    delta = m**2 - s**2
+    if delta >=0:
+        #a0 = delta**(0.25)
+        s0 = np.sqrt((m -np.sqrt(delta))/2.)
+    else:
+        #a0 = np.nan
+        s0 = np.nan
+    return s0
 
 def cut_outliers_circ(vector,no_sigmas):
     #cuts outliers that are in distance from mean value larger than no_sigmas
@@ -58,6 +96,9 @@ def circular_std(theta):
     st = np.sqrt(-2.*np.log(np.sqrt(C**2+S**2)))*180./np.pi
     return st
 
+def circular_std_of_mean(theta):
+    return circular_std(theta)/np.sqrt(len(theta))
+
 def mean(theta):
     theta = np.asarray(theta, dtype=np.float32)
     return np.mean(theta)
@@ -82,6 +123,19 @@ def unbiased_amp(amp):
     amp2 = np.asarray(amp, dtype=np.float32)**2
     m = np.mean(amp2)
     s = np.std(amp2)
+    delta = m**2 - s**2
+    if delta >=0:
+        a0 = delta**(0.25)
+    else:
+        a0 = 0.*(m**2)**(0.25)
+    return a0
+
+def unbiased_amp_boot(amp):
+    amp2 = np.asarray(amp, dtype=np.float32)**2
+    #m = np.mean(amp2)
+    #s = np.std(amp2)
+    m = bootstrap(amp2,N,np.mean)[0]
+    s = bootstrap(amp2,N,np.std)[0]
     delta = m**2 - s**2
     if delta >=0:
         a0 = delta**(0.25)
@@ -223,8 +277,32 @@ def get_outlier_indicator(x,scaler=2.):
     out_ind = adj_box_outlier(x,scaler)
     return out_ind
 
+def bootstrap(data, num_samples, statistic, alpha=0.05):
+    """Returns bootstrap estimate of 100.0*(1-alpha) CI for statistic."""
+    data = np.asarray(data)
+    data = np.asarray(data)
+    n = len(data)
+    idx = npr.randint(0, n, (num_samples, n))
+    samples = data[idx]
+    stat = np.sort(statistic(samples, 1))
+    return np.median(stat),stat[int((alpha/2.0)*num_samples)], stat[int((1-alpha/2.0)*num_samples)]
+    #return stat[int(num_samples/2.)]
 
-def scans_statistics(alist):
+def bootstrap2(data, num_samples, statistic, alpha=0.05):
+    """Returns bootstrap estimate of 100.0*(1-alpha) CI for statistic."""
+
+    stat = np.zeros(num_samples)
+    data = np.asarray(data)
+    n = len(data)
+    idx = npr.randint(0, n, (num_samples, n))
+    samples = data[idx]
+    for cou in range(num_samples):
+        stat[cou] = statistic(samples[cou,:])
+    stat = np.sort(stat)
+    return np.median(stat),stat[int((alpha/2.0)*num_samples)], stat[int((1-alpha/2.0)*num_samples)]
+    #return stat[int(num_samples/2.)]
+
+def scans_statistics(alist,statL='all'):
     if 'band' not in alist.columns:
         alist = add_band(alist,None)
     if 'amp_no_ap' not in alist.columns:
@@ -233,20 +311,27 @@ def scans_statistics(alist):
         alist['scan_id']=alist['scan_no_tot']
     if 'resid_phas' not in alist.columns:
         alist['resid_phas']=alist['phase']
-    foo = alist[['scan_id','polarization','expt_no','band','datetime','resid_phas','amp','baseline','source','amp_no_ap']]
+    foo = alist[['scan_id','polarization','expt_no','band','datetime','resid_phas','amp','baseline','source','amp_no_ap','mjd']]
     time_0 = list(foo['datetime'])[0]
     # means
     foo['mean_amp'] = foo['amp']
     foo['mean_phase'] = foo['resid_phas']
     foo['median_amp'] = foo['amp']
     foo['median_phase'] = foo['resid_phas']
-
+    foo['unbiased_amp'] = foo['amp']
+    foo['unb_dtr_amp'] = list(zip(foo.mjd,foo.amp))
+    foo['rice_amp'] = foo['amp']
+    foo['inv_amp'] = foo['amp']
+    
     # variation
     foo['std_amp'] = foo['amp']
     foo['std_phase'] = foo['resid_phas']
     foo['unbiased_std'] = foo['amp']
     foo['unbiased_std_no_ap'] = foo['amp_no_ap']
     foo['unbiased_snr'] = foo['amp']
+    foo['unb_dtr_std'] = list(zip(foo.mjd,foo.amp))
+    foo['rice_std'] = foo['amp']
+    foo['inv_std'] = foo['amp']
     foo['mad_amp'] = foo['amp']
     foo['mad_phase'] = foo['resid_phas']
     foo['iqr_amp'] = foo['amp']
@@ -261,60 +346,71 @@ def scans_statistics(alist):
     foo['min_phas'] = foo['resid_phas']
 
     # skewness
+    '''
     foo['skew_amp'] = foo['amp']
     foo['skew_phas'] = foo['resid_phas']
     foo['medc_amp'] = foo['amp']
     foo['medc_phas'] = foo['resid_phas']
-
+    '''
     #time correlation
     time_sec = list(map(lambda x: float((x - time_0).seconds), foo['datetime']))
     foo['corr_phase'] = list(zip(time_sec,foo['resid_phas']))
     foo['corr_amp'] = list(zip(time_sec,foo['amp']))
 
     # other
+    
     foo['length'] = foo['amp']
+    '''
     foo['number_out'] = foo['amp']
+
     foo['kurt_amp'] = foo['amp']
     foo['kurt_phase'] = foo['resid_phas']
     
     # dropout detection
     foo['dropout'] = foo['amp']
+    '''
 
     scans_stats = foo.groupby(('scan_id','polarization','expt_no','band','baseline','source')).agg(
     { 'datetime': min,
-      'mean_amp': mean,
-      'mean_phase': circular_mean,
-      'median_amp': median,
-      'median_phase': circular_median,
-      'std_amp': std,
-      'std_phase': circular_std,
-      'unbiased_std': unbiased_std,
-      'unbiased_std_no_ap': unbiased_std,
-      'unbiased_snr': unbiased_snr,
-      'mad_amp': mad,
-      'mad_phase': circular_mad,
-      'iqr_amp': iqr,
-      'iqr_phase': iqr,
-      'q1_amp': do_quart,
-      'q3_amp': up_quart,
-      'q1_phase': do_quart,
-      'q3_phase': up_quart,
-      'max_amp': maxv,
-      'min_amp': minv,
-      'max_phas': maxv,
-      'min_phas': minv,
-      'skew_amp': skew,
-      'skew_phas': skew,
-      #'medc_amp': medcouple,
-      #'medc_phas': medcouple,
-      #'corr_phase': correlate_tuple,
-      #'corr_amp': correlate_tuple,
-      'length': len,
-      #'number_out': number_out,
-      'kurt_amp': kurt,
-      'kurt_phase': kurt
-      #'dropout': detect_dropouts_kmeans
-      #'dropout_indic'
+    'mean_amp': mean,
+    'mean_phase': circular_mean,
+    'median_amp': median,
+    'median_phase': circular_median,
+    'unbiased_amp': unbiased_amp,
+    #'unb_dtr_amp': unb_amp_no_trend,
+    'rice_amp': find_rice_amp_low_snr,
+    'inv_amp': Koay_inv_amp,
+    'std_amp': std,
+    'std_phase': circular_std,
+    'unbiased_std': unbiased_std,
+    #'unb_dtr_std': unb_std_no_trend,
+    'rice_std': find_rice_sig_low_snr,
+    'inv_std': Koay_inv_std,
+    'unbiased_std_no_ap': unbiased_std,
+    'unbiased_snr': unbiased_snr,
+    'mad_amp': mad,
+    'mad_phase': circular_mad,
+    'iqr_amp': iqr,
+    'iqr_phase': iqr,
+    'q1_amp': do_quart,
+    'q3_amp': up_quart,
+    'q1_phase': do_quart,
+    'q3_phase': up_quart,
+    'max_amp': maxv,
+    'min_amp': minv,
+    'max_phas': maxv,
+    'min_phas': minv,
+    'skew_amp': skew,
+    'skew_phas': skew,
+    'medc_amp': medcouple,
+    'medc_phas': medcouple,
+    'corr_phase': correlate_tuple,
+    'corr_amp': correlate_tuple,
+    'length': len,
+    'number_out': number_out,
+    'kurt_amp': kurt,
+    'kurt_phase': kurt,
+    'dropout': detect_dropouts_kmeans
     })
 
     return scans_stats.reset_index()
@@ -417,6 +513,10 @@ def add_mjd(alist):
     alist['mjd'] = Time(list(alist.datetime)).mjd
     return alist
 
+def add_fmjd(alist):
+    alist['fmjd'] = list(map(lambda x: x%1 ,Time(list(alist.datetime)).mjd))
+    return alist
+
 def add_band(alist,band):
     alist['band'] = [band]*np.shape(alist)[0]
     return alist
@@ -452,3 +552,97 @@ def fit_circ(x,y):
     R_1  = np.mean(Ri_1)
     residu_1 = sum((Ri_1-R_1)**2)
     return R_1, xc_1, yc_1
+
+
+
+def MC_CP_dist(amp,sig,bsp_avg=1, N=int(1e5)):
+
+    V1x = amp[0] + sig[0]*npr.randn(N)
+    V1y = sig[0]*npr.randn(N)
+    V2x = amp[1] + sig[1]*npr.randn(N)
+    V2y = sig[1]*npr.randn(N)
+    V3x = amp[2] + sig[2]*npr.randn(N)
+    V3y = sig[2]*npr.randn(N)
+    V1 = V1x + 1j*V1y
+    V2 = V2x + 1j*V2y
+    V3 = V3x + 1j*V3y
+    bsp = V1*V2*V3
+    bsp = bsp.reshape((int(N/bsp_avg),bsp_avg))
+    bsp = np.mean(bsp,1)
+
+    cphase = np.angle(bsp)*180/np.pi
+    kde = st.gaussian_kde(cphase)
+    MCsig = circular_std(cphase)
+    return kde, MCsig
+
+def fake_CP_data(amp,sig,bsp_avg=1, N=int(1e5)):
+
+    V1x = amp[0] + sig[0]*npr.randn(N)
+    V1y = sig[0]*npr.randn(N)
+    V2x = amp[1] + sig[1]*npr.randn(N)
+    V2y = sig[1]*npr.randn(N)
+    V3x = amp[2] + sig[2]*npr.randn(N)
+    V3y = sig[2]*npr.randn(N)
+    V1 = V1x + 1j*V1y
+    V2 = V2x + 1j*V2y
+    V3 = V3x + 1j*V3y
+    bsp = V1*V2*V3
+    bsp = bsp.reshape((int(N/bsp_avg),bsp_avg))
+    bsp = np.mean(bsp,1)
+    cphase = np.angle(bsp)*180/np.pi
+    return cphase
+
+def find_rice_sig_low_snr(A):
+    A = np.asarray(A)
+    m = np.mean(A)
+    s = np.mean(A**2)
+    L12 = lambda x: np.exp(x/2)*((1-x)*ss.iv(0,-x/2)-x*ss.iv(1,-x/2))
+    eq = lambda x: x*L12(1-s/x**2/2) - m*np.sqrt(2/np.pi)
+    Esig = so.fsolve(eq,0.5)[0]
+    #EA0 = np.sqrt(s - 2*Esig**2)
+    return Esig
+
+def find_rice_amp_low_snr(A):
+    A = np.asarray(A)
+    m = np.mean(A)
+    s = np.mean(A**2)
+    L12 = lambda x: np.exp(x/2)*((1-x)*ss.iv(0,-x/2)-x*ss.iv(1,-x/2))
+    eq = lambda x: x*L12(1-s/x**2/2) - m*np.sqrt(2/np.pi)
+    sig0 = np.std(A)
+    Esig = so.fsolve(eq,sig0)[0]
+    EA0 = np.sqrt(s - 2*Esig**2)
+    return EA0
+
+
+def Koay_inv_amp(A):
+    A = np.asarray(A)
+    m = np.mean(A)
+    s = np.std(A)
+    r = m/s
+    zeta = lambda x: 2 + x**2 - (np.pi/8)*np.exp(-x**2/2)*((2+x**2)*ss.iv(0,x**2/4) + (x**2)*ss.iv(1,x**2/4))**2
+    g = lambda x: (zeta(x)*(1+r**2)-2) #no sqrt
+
+    rel = lambda x: g(x) - x**2
+    x0 = r
+    sol = so.fsolve(rel,r)[0]
+
+    unb_std = s/np.sqrt(zeta(sol))
+    unb_amp = np.sqrt(m**2 +(zeta(sol) - 2)*unb_std**2)
+    return unb_amp
+
+def Koay_inv_std(A):
+    A = np.asarray(A)
+    m = np.mean(A)
+    s = np.std(A)
+    r = m/s
+    zeta = lambda x: 2 + x**2 - (np.pi/8)*np.exp(-x**2/2)*((2+x**2)*ss.iv(0,x**2/4) + (x**2)*ss.iv(1,x**2/4))**2
+    g = lambda x: (zeta(x)*(1+r**2)-2) #no sqrt
+
+    rel = lambda x: g(x) - x**2
+    x0 = r
+    sol = so.fsolve(rel,r)[0]
+
+    unb_std = s/np.sqrt(zeta(sol))
+    unb_amp = np.sqrt(m**2 +(zeta(sol) - 2)*unb_std**2)
+    return unb_std
+#def chi2

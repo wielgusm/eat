@@ -65,6 +65,7 @@ def plot_box_data_amplitude(corr,save_figure):
         plt.title(basel+' , '+sour+' , '+str(expt)+' , '+band+' , '+polar+' , '+'5s', fontsize=15 )
         plt.ylabel('corr coeff',fontsize=15)
         plt.xlabel('scan_id',fontsize=15)
+        plt.grid()
         plt.show()
         #print(save_figure)
         if save_figure == True:
@@ -151,6 +152,7 @@ def plot_scan_data(corr, save_figure):
         plt.title(basel+' , '+sour+' , '+str(expt)+' , '+band+' , '+polar+' , '+scanid+' , '+'1s'+' , '+str(len(goosc.amp))+' points', fontsize=15 )
         plt.xlabel('corr coeff',fontsize=15)
         plt.ylabel('counts',fontsize=15)
+        plt.grid()
         plt.show()
         #print(save_figure)
         if save_figure == True:
