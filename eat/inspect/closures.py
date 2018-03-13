@@ -141,20 +141,29 @@ def baselines2triangles(basel):
     tri = [''.join(sorted(list(set(''.join(x))))) for x in basel]
     return tri
 
-def all_bispectra(alist,phaseType='resid_phas'):
-    bsp_LL = all_bispectra_polar(alist,'LL',phaseType)
-    bsp_RR = all_bispectra_polar(alist,'RR',phaseType)
-    bsp = pd.concat([bsp_LL,bsp_RR],ignore_index=True)
-    return bsp
+def all_bispectra(alist,phase_type='resid_phas'):
 
+    if phase_type in alist.columns:
+        bsp_LL = all_bispectra_polar(alist,'LL',phase_type)
+        bsp_RR = all_bispectra_polar(alist,'RR',phase_type)
+        bsp = pd.concat([bsp_LL,bsp_RR],ignore_index=True)
+        return bsp
+    else:
+        print('Wrong name for the phase column!')
 
-def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
+def all_bispectra_polar(alist,polar,phase_type='resid_phas'):
     alist = alist[alist['polarization']==polar]
+    alist = alist.loc[:,~alist.columns.duplicated()]
     if 'scan_id' not in alist.columns:
         alist.loc[:,'scan_id'] = alist.loc[:,'scan_no_tot']
     if 'band' not in alist.columns:
-        alist.loc[:,'band'] = [None]*np.shape(alist)[0]
-
+        alist.loc[:,'band'] = np.nan
+    alist['amps']=alist['amp']
+    alist['snrs']=alist['snr']
+    if 'fracpol' in alist.columns:
+        #print(alist.columns)
+        alist['fracpols']=alist['fracpol']
+    else: alist['fracpols'] = 0
     triL = list_all_triangles(alist)
     tri_baseL, sgnL = triangles2baselines(triL,alist)
     #this is done twice to remove some non-present triangles
@@ -168,41 +177,42 @@ def all_bispectra_polar(alist,polar,phaseType='resid_phas'):
         condB2 = (alist['baseline']==Tri[1])
         condB3 = (alist['baseline']==Tri[2])
         condB = condB1|condB2|condB3
-        alist_Tri = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline',phaseType,'amp','snr','gmst','band']]
+        alist_Tri = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline',phase_type,'amp','snr','gmst','band','amps','snrs','fracpols']]
         #print(alist_Tri)
         #print(np.shape(alist_Tri))
         #throw away times without full triangle
-        tlist = alist_Tri.groupby(('band','datetime')).filter(lambda x: len(x) > 2)
+        tlist = alist_Tri.groupby(('band','datetime')).filter(lambda x: len(x) == 3)
         tlist.loc[:,'sigma'] = (tlist.loc[:,'amp']/(tlist.loc[:,'snr']))
         #print(tlist.loc[:,phaseType])
         for cou2 in range(3):
-            tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phaseType] *= signat[cou2]*np.pi/180.
+            tlist.loc[(tlist.loc[:,'baseline']==Tri[cou2]),phase_type] *= signat[cou2]*np.pi/180.
         tlist.loc[:,'sigma'] = 1./tlist.loc[:,'snr']**2 #put 1/snr**2 in the sigma column to aggregate
         
-        bsp = tlist.groupby(('expt_no','source','band','scan_id','datetime')).agg({phaseType: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x))})
+        bsp = tlist.groupby(('expt_no','source','band','scan_id','datetime')).agg({phase_type: lambda x: np.sum(x),'amp': lambda x: np.prod(x), 'sigma': lambda x: np.sqrt(np.sum(x)),
+        'amps': lambda x: tuple(x),'snrs': lambda x: tuple(x),'fracpols': lambda x: tuple(x)})
         #sigma above is the CLOSURE PHASE ERROR
         #print(bsp.columns)
         
-        bsp.loc[:,'bisp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phaseType])
+        bsp.loc[:,'bsp'] = bsp.loc[:,'amp']*np.exp(1j*bsp.loc[:,phase_type])
         bsp.loc[:,'snr'] = 1./bsp.loc[:,'sigma']
         bsp.loc[:,'sigma'] = bsp.loc[:,'amp']*bsp.loc[:,'sigma'] #sigma of bispectrum
         bsp.loc[:,'triangle'] = [triL[cou]]*np.shape(bsp)[0]
         bsp.loc[:,'polarization'] = [polar]*np.shape(bsp)[0]
         #bsp.loc[:,'signature'] = [signat]*np.shape(bsp)[0]
-        bsp.loc[:,'cphase'] = np.angle(bsp.loc[:,'bisp'])*180./np.pi
-        bsp.loc[:,'amp'] = np.abs(bsp.loc[:,'bisp'])
-        bsp.loc[:,'snr'] = bsp.loc[:,'amp']/bsp.loc[:,'sigma']
+        bsp.loc[:,'cphase'] = np.angle(bsp.loc[:,'bsp'])*180./np.pi
+        bsp.loc[:,'amp'] = np.abs(bsp.loc[:,'bsp'])
+        #bsp.loc[:,'snr'] = bsp.loc[:,'amp']/bsp.loc[:,'sigma']
         bsp.loc[:,'sigmaCP'] = 1./bsp.loc[:,'snr']*180./np.pi #deg
         bsp_out = pd.concat([bsp_out, bsp])
     bsp_out = bsp_out.reset_index()
     #print(bsp_out.columns)
-    bsp_out = bsp_out[['datetime','source','triangle','polarization','cphase','sigmaCP','amp','sigma','snr','scan_id','expt_no','band']] 
-    
+    bsp_out = bsp_out[['datetime','source','triangle','polarization','cphase','sigmaCP','amp','sigma','snr','scan_id','expt_no','band','amps','snrs','fracpols']] 
     return bsp_out
 
 
 def all_bispectra_polar_scan_MC(alist,polar,phaseType='resid_phas'):
     alist = alist[alist['polarization']==polar]
+    alist = alist.loc[:,~alist.columns.duplicated()]
     if 'scan_id' not in alist.columns:
         alist.loc[:,'scan_id'] = alist.loc[:,'scan_no_tot']
     if 'band' not in alist.columns:
@@ -285,6 +295,8 @@ def all_quadruples_polar_log(alist,polar):
     quaL = list_all_quadrangles(alist)
     quad_baseL = quadrangles2baselines(quaL,alist)
     quad_out = pd.DataFrame({})
+    alist['amps'] = alist['amp']
+    alist['snrs'] = alist['snr']
     #alist.loc[:,'log_amp'] = np.log(alist.loc[:,'amp'])
     for cou in range(len(quad_baseL)):
     #loop over quadrangles
@@ -295,10 +307,10 @@ def all_quadruples_polar_log(alist,polar):
         condB2 = (alist['baseline']==Quad[2])
         condB3 = (alist['baseline']==Quad[3])
         condB = condB0|condB1|condB2|condB3
-        alist_Quad = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline','amp','snr','gmst','band']]
+        alist_Quad = alist.loc[condB,['expt_no','scan_id','source','datetime','baseline','amp','snr','gmst','band','amps','snrs']]
         print(Quad)
         #throw away times without full quadrangle
-        tlist = alist_Quad.groupby(('band','datetime')).filter(lambda x: len(x) > 3)
+        tlist = alist_Quad.groupby(('band','datetime')).filter(lambda x: len(x) == 4)
 
         ###MONTE CARLO VARIATION
         #foo = list(zip(tlist.loc[:,'snr'],tlist.loc[:,'amp']))
@@ -321,7 +333,8 @@ def all_quadruples_polar_log(alist,polar):
         quadlist_group = tlist.groupby(('expt_no','band','source','scan_id','datetime'))
         
         ###STANDARD FORMULA FOR VARIATION
-        quadlist = quadlist_group.agg({'logamp': lambda x: np.sum(np.log(x)),'sigma': lambda x: np.sqrt(np.sum(x)) })
+        quadlist = quadlist_group.agg({'logamp': lambda x: np.sum(np.log(x)),'sigma': lambda x: np.sqrt(np.sum(x)),
+        'amps': lambda x: tuple(x), 'snrs': lambda x: tuple(x) })
         quadlist = quadlist.reset_index()
         #print(quadlist)
         ###MONTE CARLO VARIATION
@@ -344,7 +357,7 @@ def all_quadruples_polar_log(alist,polar):
     quad_out = quad_out.reset_index()
     #print(quad_out)
     quad_out = quad_out[['datetime','band','source','quadrangle','polarization','logamp','sigma','scan_id','expt_no']] 
-    quad['quadrangle'] = list(map(tuple,quad.quadrangle))
+    quad_out['quadrangle'] = list(map(tuple,quad_out.quadrangle))
     return quad_out
 
 def only_trivial_quadrangles(quad, whichB='all'):
@@ -428,7 +441,7 @@ def coh_average_bsp(AIPS, tcoh = 5.):
     AIPS['amp'] = np.abs(AIPS['vis'])
     AIPS['cphase'] = np.angle(AIPS['vis'])*180/np.pi
     AIPS = AIPS[['datetime','band','triangle','source','polarization','amp', 'cphase', 'sigmaCP','snr','expt_no','scan_id','circ_sigma']]
-    return 
+    return AIPS
     
 
 def circular_mean(theta):
@@ -552,6 +565,22 @@ def phase_diff(v1,v2):
     v2[e3 < e1] = v2c[e3 < e1]
     return v2
 
+'''
+def coh_avg(frame, tcoh='scan',phaseType='resid_phas',ampType='amp',group=VIS):
+'''
+#coherently averages complex quantity
+'''
+if 'band' not in frame.columns:
+    frame['band'] = np.nan
+if group==VIS:
+    grouping = ('scan_id','expt_no','band','polarization')
+
+if tcoh=='scan':
+
+else:
+    grouping = grouping+('datetime')
+'''
+
 def coh_average_vis(AIPS, tcoh = 5.,phaseType='resid_phas'):
     #print(AIPS.columns)
     if 'scan_no_tot' not in AIPS.columns:
@@ -623,8 +652,8 @@ def incoh_average_amp(AIPS, tinc = 'scan',scale_amp=1.):
         AIPS['scan_id'] = AIPS['scan_no_tot']
     if tinc == 'scan':
         if 'snr' in AIPS.columns:
-            AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','snr','scan_id','expt_no','sigma','sigmaB']]
-            AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 
+            AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','snr','scan_id','expt_no','sigma','sigmaB','band']]
+            AIPS = AIPS.groupby(('baseline','source','polarization','expt_no','scan_id','band')).agg({'datetime': 'min', 'ampB': np.mean, 'amp': unbiased_amp, 
             'sigmaB': lambda x: np.std(x)/np.sqrt(len(x)), 'sigma': lambda x: unbiased_sigma(x)/np.sqrt(len(x)), 'snr': lambda x : np.sqrt(np.sum(x**2)) })
         else:
             AIPS = AIPS[['datetime','baseline','source','polarization','amp','ampB','scan_id','expt_no','sigma','sigmaB']]

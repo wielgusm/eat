@@ -270,9 +270,9 @@ def prepare_dicts(folder_path):
     dict_dpfu = {}; dict_gfit = {}
     list_files = os.listdir(folder_path)
     list_files = [f for f in list_files if f[0] =='e']
-    cols = ['datetime','Tsys_st_R_lo','Tsys_st_L_lo','Tsys_st_R_hi','Tsys_st_L_hi']
-    antena='NoAntena'
-    FooDF = pd.DataFrame(columns=cols)
+    #cols = ['datetime','Tsys_st_R_lo','Tsys_st_L_lo','Tsys_st_R_hi','Tsys_st_L_hi']
+    #antena='NoAntena'
+    #FooDF = pd.DataFrame(columns=cols)
 
     for f in list_files:
         fpath = folder_path+f
@@ -879,6 +879,7 @@ def make_scan_list(fpath,dict_gfit,version='new'):
             elevloc ={'P':elevPloc, 'Z':elevZloc, 'X':elevXloc}
             elev.append(elevloc)
             ant_foo = set([nam2lett[aa.sched[x]['scan'][y]['site']] for y in range(len(aa.sched[x]['scan']))])
+            if 'S' in ant_foo: ant_foo = ant_foo|{'R'}
             antenas.append(ant_foo)
             duration_foo =max([aa.sched[x]['scan'][y]['scan_sec'] for y in range(len(aa.sched[x]['scan']))])
             duration.append(duration_foo)
@@ -929,39 +930,120 @@ def make_scan_list(fpath,dict_gfit,version='new'):
         if 'X' in row.antenas:
             foo = gainXf(scans.elev[index]['X'])
             scans.gainX[index] = float(foo)
-
+    
+    #add SPT scan information
+    #if SPT_total_scan==True:
+    #    scans = add_SPT_total_scan(scans)
     return scans
+
+
+def add_SPT_total_scan(scans):
+    '''
+    this adds column with global scan number for SPT
+    because Tsys timestamps for SPT are too different from scans timestamps
+    to be processed normally
+    '''
+    scansY = scans[list(map(lambda x: 'Y' in x, scans.antenas))].sort_values('time_min').reset_index(drop=True)
+    scansY['scan_no_tot_Y'] = scansY.index
+    scans_noY = scans[list(map(lambda x: 'Y' not in x, scans.antenas))]
+    scans = pd.concat([scansY,scans_noY],ignore_index=True)
+    scans=scans.sort_values('time_min').reset_index(drop=True)
+    return scans
+
 
 def match_scans_Tsys(scans,Tsys):
     #negative labels for ANTAB data taken between scans
+
+    #create scan labels to match Tsys with scans
     bins_labels = [None]*(2*scans.shape[0]-1)
-    bins_labels[1::2] = list(map(lambda x: -x-1,list(scans['scan_no_tot'])[:-1]))
+    bins_labels[1::2] = list(map(lambda x: -x,list(scans['scan_no_tot'])[1:]))
     bins_labels[::2] = list(scans['scan_no_tot'])
+    #print('lab ', np.shape(bins_labels))
+    #add bin for time before the first scan
+
+    foo = list(scans['scan_no_tot'])[0]
+    if foo==0: foo=10000
+    #print(foo)
+    bins_labels = [-foo]+bins_labels
+    #print(bins_labels)
+    #print('lab ', np.shape(bins_labels))
+    #print(bins_labels)
     dtmin = datetime.timedelta(seconds = 0.) 
     dtmax = datetime.timedelta(seconds = 0.) 
     binsT = [None]*(2*scans.shape[0])
     binsT[::2] = list(map(lambda x: x - dtmin,list(scans.time_min)))
-    binsT[1::2] = list(map(lambda x: x + dtmax,list(scans.time_max))) 
+    binsT[1::2] = list(map(lambda x: x + dtmax,list(scans.time_max)))
+    #print('bins ', np.shape(binsT))
+    #add bin for time before the first scan
+    min_time = min(scans.time_min)-datetime.timedelta(seconds = 1600.)
+    binsT = [min_time]+binsT
+    #print('bins ', np.shape(binsT))
+    #add scan indexed label to Tsys 
     ordered_labels = pd.cut(Tsys.datetime, binsT,labels = bins_labels)
+    if list(Tsys.antena.unique())==['Y']:
+        Tsys.loc[:,'scan_no_tot'] = np.abs(np.asarray(list(ordered_labels)))
+    else:
+        Tsys.loc[:,'scan_no_tot'] = list(ordered_labels)
     
+    #if there is a column with SPT scans count, then treat SPT separately
+    #print( list(Tsys.antena.unique()) )
+    '''
+    if list(Tsys.antena.unique())==['Y']:
+        scansY = scans[list(map(lambda x: 'Y' in x, scans.antenas))].sort_values('time_min').reset_index(drop=True)
+        bins_labels_Y = [None]*(2*scansY.shape[0]-1)
+        bins_labels_Y[1::2] = list(map(lambda x: -x-1,list(scansY['scan_no_tot_Y'])[:-1]))
+        bins_labels_Y[::2] = list(scansY['scan_no_tot_Y'])
+        #append for data after last scan
+        #bins_labels_Y.append(10000)
+        #bins_labels_Y = [-10000]+bins_labels_Y
+
+        dtmin = datetime.timedelta(seconds = 5.) 
+        dtmax = datetime.timedelta(seconds = 5.) 
+        binsTY = [None]*(2*scansY.shape[0])
+        binsTY[::2] = list(map(lambda x: x - dtmin,list(scansY.time_min)))
+        binsTY[1::2] = list(map(lambda x: x + dtmax,list(scansY.time_max)))
+        #append for data after last scan
+        #binsTY.append(max(scansY.time_max)+datetime.timedelta(seconds = 300.))
+        #min_time = min(scansY.time_min)-datetime.timedelta(seconds = 1600.)
+        #binsTY = [min_time]+binsTY
+
+        ordered_labels_Y = pd.cut(Tsys.datetime, binsTY,labels = bins_labels_Y)
+        #absolute value so that Tsys value before scan is attributed to the SPT
+        #scan taken after
+        #print(any(np.isnan(np.asarray(ordered_labels_Y))))
+
+        #print(Tsys[Tsys['scan_no_tot_Y']!=Tsys['scan_no_tot_Y'] ])
+        
+        Tsys.loc[:,'scan_no_tot_Y'] = np.abs(np.asarray(list(ordered_labels_Y)))
+        Tsys = Tsys[Tsys['scan_no_tot_Y']==Tsys['scan_no_tot_Y']]
+        #Tsys = Tsys[Tsys['scan_no_tot_Y']<5000]
+        DictSourceY = dict(zip(list(scans.scan_no_tot_Y), list(scans.source)))
+
+    '''
+
     DictSource = dict(zip(list(scans.scan_no_tot), list(scans.source)))
     DictGainP = dict(zip(list(scans.scan_no_tot), list(scans.gainP)))
     DictGainZ = dict(zip(list(scans.scan_no_tot), list(scans.gainZ)))
     DictGainX = dict(zip(list(scans.scan_no_tot), list(scans.gainX)))
-    Tsys.loc[:,'scan_no_tot'] = list(ordered_labels)
-    #print(bins_labels)
-    #print(binsT)
-    #print(len(ordered_labels))
-    #print(ordered_labels)
-    #print(ordered_labels)
-    #print(np.shape(Tsys))
+    DictTmin = dict(zip(list(scans.scan_no_tot), list(scans.time_min)))
+
+
+    #select only the data taken during the scan but for SPT
+    #use data taken between scans by attributing then to the scan after
+    #Tsys.loc[(Tsys['antena']=='Y')&(Tsys['scan_no_tot']<0), 'scan_no_tot'] = Tsys.loc[(Tsys['antena']=='Y')&(Tsys['scan_no_tot']<0), 'scan_no_tot'].apply(np.abs)
     Tsys = Tsys[list(map(lambda x: x >= 0, (Tsys['scan_no_tot'])   ))]
-    #print(np.shape(Tsys))
-    #Tsys.loc[:,'scan_no_tot'] = list(Tsys['scan_no_tot'])
+    '''
+    if list(Tsys.antena.unique())==['Y']:
+        Tsys.loc[:,'source'] = list(map(lambda x: DictSourceY[x], Tsys['scan_no_tot_Y']))
+    else:
+    '''   
     Tsys.loc[:,'source'] = list(map(lambda x: DictSource[x], Tsys['scan_no_tot']))
+    
     Tsys.loc[:,'gainP'] = list(map(lambda x: DictGainP[x], Tsys['scan_no_tot']))
     Tsys.loc[:,'gainZ'] = list(map(lambda x: DictGainZ[x], Tsys['scan_no_tot']))
     Tsys.loc[:,'gainX'] = list(map(lambda x: DictGainX[x], Tsys['scan_no_tot']))
+    Tsys.loc[:,'t_scan'] = list(map(lambda x: DictTmin[x], Tsys['scan_no_tot']))
+    
     Tsys = Tsys.sort_values('datetime').reset_index(drop=True)
     
     return Tsys
@@ -987,7 +1069,7 @@ def global_match_scans_Tsys(scans,Tsys_full):
             condA = (Tsys_full['antena']==ant)
             condE = (Tsys_full['expt_no']==expt)
             Tsys_loc = Tsys_full.loc[condA&condE].sort_values('datetime').reset_index(drop=True)
-            scans_loc = scans[(scans.expt == expt)].sort_values('time_min').reset_index(drop=True)
+            scans_loc = scans[(scans.expt == expt)&list(map(lambda x: ant in x,scans.antenas))].sort_values('time_min').reset_index(drop=True)
             #print(np.shape(Tsys_loc),np.shape(scans_loc))
             if(np.shape(Tsys_loc)[0]>0):
                 Tsys_foo = match_scans_Tsys(scans_loc,Tsys_loc)
@@ -1075,6 +1157,25 @@ def modify_Tsys_match(Tsys_match,dict_dpfu):
     Tsys['sefd_L_hi'] = Tsys['Tsys_st_L_hi']/Tsys['gain']/Tsys['dpfu']
     Tsys['sefd_R_hi'] = Tsys['Tsys_st_R_hi']/Tsys['gain']/Tsys['dpfu']
     SEFD = Tsys[['datetime','antena','expt_no','source','mjd','scan_no_tot','sefd_L_lo','sefd_R_lo','sefd_L_hi','sefd_R_hi']].copy()
+    SEFD.sort_values(['datetime','antena'], inplace=True)
+    SEFD.reset_index(inplace=True)
+    return SEFD
+
+def modify_Tsys_match_new(Tsys_match,dict_dpfu):
+    Tsys_match['dpfu_R'] = list(map(lambda x: dict_dpfu[x],list(zip(Tsys_match['antena'],Tsys_match['track'],Tsys_match['band'],['R']*len(Tsys_match['antena'])))))
+    Tsys_match['dpfu_L'] = list(map(lambda x: dict_dpfu[x],list(zip(Tsys_match['antena'],Tsys_match['track'],Tsys_match['band'],['L']*len(Tsys_match['antena'])))))
+    Tsys_P = Tsys_match[Tsys_match.antena=='P']
+    Tsys_Z = Tsys_match[Tsys_match.antena=='Z']
+    Tsys_X = Tsys_match[Tsys_match.antena=='X']
+    Tsys_rest = Tsys_match[list(map(lambda x: x not in ['P', 'Z','X'],Tsys_match.antena))]
+    Tsys_P.loc[:,'gain'] = Tsys_P['gainP']
+    Tsys_Z.loc[:,'gain'] = Tsys_Z['gainZ']
+    Tsys_X.loc[:,'gain'] = Tsys_X['gainX']
+    Tsys_rest.loc[:,'gain'] = [1.]*np.shape(Tsys_rest)[0]
+    Tsys = pd.concat([Tsys_P,Tsys_Z,Tsys_X,Tsys_rest],ignore_index=True)
+    Tsys['sefd_L'] = Tsys['Tsys_st_L']/Tsys['gain']/Tsys['dpfu_L']
+    Tsys['sefd_R'] = Tsys['Tsys_st_R']/Tsys['gain']/Tsys['dpfu_R']
+    SEFD = Tsys[['datetime','antena','expt_no','source','mjd','scan_no_tot','sefd_L','sefd_R']].copy()
     SEFD.sort_values(['datetime','antena'], inplace=True)
     SEFD.reset_index(inplace=True)
     return SEFD

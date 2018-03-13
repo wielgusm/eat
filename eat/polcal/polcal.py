@@ -16,7 +16,7 @@ lat_dict = {'A': -23.02922,
             'J': 19.82284,
             'S': 19.82423,
             'R': 19.82423,
-            'T':  -90.00000}
+            'Y':  -90.00000}
 
 lon_dict = {'A': 67.75474,
             'X': 67.75914,
@@ -26,13 +26,13 @@ lon_dict = {'A': 67.75474,
             'J': 155.47703,
             'S': 155.47755,
             'R': 155.47755,
-            'T':  -45.00000}
+            'Y':  -45.00000}
 
 ant_locat ={
     'A': [2225061.16360, -5440057.36994, -2481681.15054],
     'X': [2225039.52970, -5441197.62920, -2479303.35970],
     'P': [5088967.74544, -301681.18586, 3825012.20561],
-    'T': [0.01000, 0.01000, -6359609.70000],
+    'Y': [0.01000, 0.01000, -6359609.70000],
     'L': [-768715.63200, -5988507.07200, 2063354.85200],
     'Z': [-1828796.20000, -5054406.80000, 3427865.20000],
     'J': [-5464584.67600, -2493001.17000, 2150653.98200],
@@ -139,7 +139,7 @@ def field_rotation(fra_data):
         fra = par
     elif station in {'X','Z'}:
         fra = par+elev
-    elif station in {'L','P'}:
+    elif station in {'L','P','Y'}:
         fra = par-elev
     elif station=='S':
         fra = 45. - elev + par
@@ -440,6 +440,7 @@ def solve_only_phas_ratio_fun(alist,degSMA=5):
     dicPh['Z'] = lambda x: np.poly1d([valuesPh['Z']])(x)
     dicPh['L'] = lambda x: np.poly1d([valuesPh['L']])(x)
     dicPh['P'] = lambda x: np.poly1d([valuesPh['P']])(x)
+    dicPh['Y'] = lambda x: np.poly1d([valuesPh['Y']])(x)
     #print('L ', dicPh['L'](0))
     #print(valuesPh)
     #now solve for SMA as 5-th order poly in time
