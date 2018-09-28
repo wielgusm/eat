@@ -725,6 +725,7 @@ def incoh_avg_vis(frame,tavg='scan',columns_out0=[],phase_type='resid_phas'):
     frame.drop_duplicates(subset=list(grouping0)+['datetime'], keep='first', inplace=True)
     frame['vis']=frame['amp']*np.exp(1j*frame[phase_type]*np.pi/180.)
     frame['number']=0.
+    frame = frame.loc[:,~frame.columns.duplicated()]
 
     if 'phase' not in frame.columns:
         frame['phase'] = frame[phase_type]
@@ -874,6 +875,7 @@ def prepare_ER3_vis(path='/Users/mwielgus/Dropbox (Smithsonian External)/EHT/Dat
         print('loading lo band data...')
         lo_path = path+'lo/'+filen
         hops_lo = hops.read_alist(lo_path)
+        fix_alist(hops_lo) #fixing swaps
         hops_lo = cl.add_band(hops_lo,'lo')
         bandL+=[hops_lo]
 
@@ -881,6 +883,7 @@ def prepare_ER3_vis(path='/Users/mwielgus/Dropbox (Smithsonian External)/EHT/Dat
         print('loading hi band data...')
         hi_path = path+'hi/'+filen
         hops_hi = hops.read_alist(hi_path)
+        fix_alist(hops_hi) #fixing swaps
         hops_hi = cl.add_band(hops_hi,'hi')
         bandL+=[hops_hi]
 
@@ -899,8 +902,6 @@ def prepare_ER3_vis(path='/Users/mwielgus/Dropbox (Smithsonian External)/EHT/Dat
     #if reverse_pol==True:
     #    print('reverse polarization labels...')
     #    hops_frame['polarization'] = hops_frame['polarization'].apply(lambda x: x[::-1])
-    
-    fix_alist(hops_frame)
 
     print('adding mjd...')
     #add mjd
